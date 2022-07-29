@@ -29,16 +29,20 @@ type AddActor struct {
 	Pitch float32
 	// Yaw is the horizontal rotation of the entity. Yaw is also measured in degrees.
 	Yaw float32
-	// HeadYaw is the same as Yaw, except that it applies specifically to the head of the entity. A different
-	// value for HeadYaw than Yaw means that the entity will have its head turned.
+	// HeadYaw is the same as Yaw, except that it applies specifically to the head of the entity. A different value for
+	// HeadYaw than Yaw means that the entity will have its head turned.
 	HeadYaw float32
+	// BodyYaw is the same as Yaw, except that it applies specifically to the body of the entity. A different value for
+	// BodyYaw than HeadYaw means that the entity will have its body turned, although it is unclear what the difference
+	// between BodyYaw and Yaw is.
+	BodyYaw float32
 	// Attributes is a slice of attributes that the entity has. It includes attributes such as its health,
 	// movement speed, etc.
 	Attributes []protocol.Attribute
 	// EntityMetadata is a map of entity metadata, which includes flags and data properties that alter in
 	// particular the way the entity looks. Flags include ones such as 'on fire' and 'sprinting'.
 	// The metadata values are indexed by their property key.
-	EntityMetadata map[uint32]interface{}
+	EntityMetadata map[uint32]any
 	// EntityLinks is a list of entity links that are currently active on the entity. These links alter the
 	// way the entity shows up when first spawned in terms of it shown as riding an entity. Setting these
 	// links is important for new viewers to see the entity is riding another entity.
@@ -60,6 +64,7 @@ func (pk *AddActor) Marshal(w *protocol.Writer) {
 	w.Float32(&pk.Pitch)
 	w.Float32(&pk.Yaw)
 	w.Float32(&pk.HeadYaw)
+	w.Float32(&pk.BodyYaw)
 	protocol.WriteInitialAttributes(w, &pk.Attributes)
 	w.EntityMetadata(&pk.EntityMetadata)
 	protocol.WriteEntityLinks(w, &pk.EntityLinks)
@@ -75,6 +80,7 @@ func (pk *AddActor) Unmarshal(r *protocol.Reader) {
 	r.Float32(&pk.Pitch)
 	r.Float32(&pk.Yaw)
 	r.Float32(&pk.HeadYaw)
+	r.Float32(&pk.BodyYaw)
 	protocol.InitialAttributes(r, &pk.Attributes)
 	r.EntityMetadata(&pk.EntityMetadata)
 	protocol.EntityLinks(r, &pk.EntityLinks)

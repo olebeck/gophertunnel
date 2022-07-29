@@ -31,9 +31,10 @@ func parseData(data []byte, conn *Conn) (*packetData, error) {
 }
 
 // decode decodes the packet payload held in the packetData and returns the packet.Packet decoded.
-func (p *packetData) decode(conn *Conn) (pk packet.Packet, err error) {
+func (p *packetData) decode(conn *Conn) (pks []packet.Packet, err error) {
 	// Attempt to fetch the packet with the right packet ID from the pool.
 	pkFunc, ok := conn.pool[p.h.PacketID]
+	var pk packet.Packet
 	if !ok {
 		// No packet with the ID. This may be a custom packet of some sorts.
 		pk = &packet.Unknown{PacketID: p.h.PacketID}
@@ -49,7 +50,7 @@ func (p *packetData) decode(conn *Conn) (pk packet.Packet, err error) {
 	}()
 	pk.Unmarshal(r)
 	if p.payload.Len() != 0 {
-		return pk, fmt.Errorf("%T: %v unread bytes left: 0x%x", pk, p.payload.Len(), p.payload.Bytes())
+		err = fmt.Errorf("%T: %v unread bytes left: 0x%x", pk, p.payload.Len(), p.payload.Bytes())
 	}
-	return pk, nil
+	return conn.proto.ConvertToLatest(pk, conn), err
 }

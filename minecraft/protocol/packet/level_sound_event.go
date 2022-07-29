@@ -382,6 +382,73 @@ const (
 	SoundEventTongue
 	SoundEventCrackIronGolem
 	SoundEventRepairIronGolem
+	SoundEventListening
+	SoundEventHeartbeat
+	SoundEventHornBreak
+	_
+	SoundEventSculkSpread
+	SoundEventSculkCharge
+	SoundEventSculkSensorPlace
+	SoundEventSculkShriekerPlace
+	SoundEventGoatCall0
+	SoundEventGoatCall1
+	SoundEventGoatCall2
+	SoundEventGoatCall3
+	SoundEventGoatCall4
+	SoundEventGoatCall5
+	SoundEventGoatCall6
+	SoundEventGoatCall7
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	_
+	SoundEventImitateWarden
+	SoundEventListeningAngry
+	SoundEventItemGiven
+	SoundEventItemTaken
+	SoundEventDisappeared
+	SoundEventReappeared
+	SoundEventDrinkMilk
+	SoundEventFrogspawnHatched
+	SoundEventLaySpawn
+	SoundEventFrogspawnBreak
+	SoundEventSonicBoom
+	SoundEventSonicCharge
+	SoundeventItemThrown
+	SoundEventRecord5
+	SoundEventConvertToFrog
+	SoundEventRecordPlaying
 	SoundEventUndefined
 )
 

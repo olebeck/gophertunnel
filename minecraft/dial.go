@@ -8,6 +8,14 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log"
+	rand2 "math/rand"
+	"net"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/sandertv/go-raknet"
 	"github.com/sandertv/gophertunnel/internal/resource"
@@ -16,14 +24,6 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 	"golang.org/x/oauth2"
-	"io/ioutil"
-	"log"
-	rand2 "math/rand"
-	"net"
-	"os"
-	"strconv"
-	"strings"
-	"time"
 )
 
 // Dialer allows specifying specific settings for connection to a Minecraft server.
@@ -54,6 +54,12 @@ type Dialer struct {
 	// Login packet. The function is called with the header of the packet and its raw payload, the address
 	// from which the packet originated, and the destination address.
 	PacketFunc func(header packet.Header, payload []byte, src, dst net.Addr)
+
+	// Protocol is the Protocol version used to communicate with the target server. By default, this field is
+	// set to the current protocol as implemented in the minecraft/protocol package. Note that packets written
+	// to and read from the Conn are always any of those found in the protocol/packet package, as packets
+	// are converted from and to this Protocol.
+	Protocol Protocol
 
 	// EnableClientCache, if set to true, enables the client blob cache for the client. This means that the
 	// server will send chunks as blobs, which may be saved by the client so that chunks don't have to be
@@ -128,23 +134,24 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 	if d.ErrorLog == nil {
 		d.ErrorLog = log.New(os.Stderr, "", log.LstdFlags)
 	}
-	var netConn net.Conn
-
-	switch network {
-	case "raknet":
-		// If the network is specifically 'raknet', we use the raknet library to dial a RakNet connection.
-		dialer := raknet.Dialer{ErrorLog: log.New(ioutil.Discard, "", 0)}
-		netConn, err = dialer.DialContext(ctx, address)
-	default:
-		// If not set to 'raknet', we fall back to the default net.Dial method to find a proper connection for
-		// the network passed.
-		var d net.Dialer
-		netConn, err = d.DialContext(ctx, network, address)
+	if d.Protocol == nil {
+		d.Protocol = proto{}
 	}
+
+	n, ok := networkByID(network)
+	if !ok {
+		return nil, fmt.Errorf("listen: no network under id: %v", network)
+	}
+
+	var netConn net.Conn
+	netConn, err = n.DialContext(ctx, address)
 	if err != nil {
 		return nil, err
 	}
+
 	conn = newConn(netConn, key, d.ErrorLog)
+	conn.proto = d.Protocol
+	conn.pool = conn.proto.Packets()
 	conn.identityData = d.IdentityData
 	conn.clientData = d.ClientData
 	conn.packetFunc = d.PacketFunc
@@ -180,7 +187,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 	go listenConn(conn, d.ErrorLog, c)
 
 	conn.expect(packet.IDServerToClientHandshake, packet.IDPlayStatus)
-	if err := conn.WritePacket(&packet.Login{ConnectionRequest: request, ClientProtocol: protocol.CurrentProtocol}); err != nil {
+	if err := conn.WritePacket(&packet.Login{ConnectionRequest: request, ClientProtocol: d.Protocol.ID()}); err != nil {
 		return nil, err
 	}
 	_ = conn.Flush()

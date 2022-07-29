@@ -105,6 +105,8 @@ type ClientData struct {
 	// GUIScale is the GUI scale of the player. It is by default 0, and is otherwise -1 or -2 for a smaller
 	// GUI scale than usual.
 	GUIScale int `json:"GuiScale"`
+	// IsEditorMode is a value to dictate if the player is in editor mode.
+	IsEditorMode bool
 	// LanguageCode is the language code of the player. It looks like 'en_UK'. It follows the ISO language
 	// codes, but hyphens ('-') are replaced with underscores. ('_')
 	LanguageCode string
@@ -303,7 +305,7 @@ func (data ClientData) Validate() error {
 	if geomData, err := base64.StdEncoding.DecodeString(data.SkinGeometry); err != nil {
 		return fmt.Errorf("SkinGeometry was not a valid base64 string: %v", err)
 	} else if len(geomData) != 0 {
-		m := make(map[string]interface{})
+		m := make(map[string]any)
 		if err := json.Unmarshal(geomData, &m); err != nil {
 			return fmt.Errorf("SkinGeometry base64 decoded was not a valid JSON string: %v", err)
 		}
@@ -312,7 +314,7 @@ func (data ClientData) Validate() error {
 	if err != nil {
 		return fmt.Errorf("SkinResourcePatch was not a valid base64 string: %v", err)
 	}
-	m := make(map[string]interface{})
+	m := make(map[string]any)
 	if err := json.Unmarshal(b, &m); err != nil {
 		return fmt.Errorf("SkinResourcePatch base64 decoded was not a valid JSON string: %v", err)
 	}

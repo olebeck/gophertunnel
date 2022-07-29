@@ -202,6 +202,18 @@ func init() {
 		IDClientStartItemCooldown:           func() Packet { return &ClientStartItemCooldown{} },
 		IDScriptMessage:                     func() Packet { return &ScriptMessage{} },
 		IDCodeBuilderSource:                 func() Packet { return &CodeBuilderSource{} },
+		IDTickingAreasLoadStatus:            func() Packet { return &TickingAreasLoadStatus{} },
+		IDDimensionData:                     func() Packet { return &DimensionData{} },
+		IDAgentAction:                       func() Packet { return &AgentAction{} },
+		IDChangeMobProperty:                 func() Packet { return &ChangeMobProperty{} },
+		IDLessonProgress:                    func() Packet { return &LessonProgress{} },
+		IDRequestAbility:                    func() Packet { return &RequestAbility{} },
+		IDRequestPermissions:                func() Packet { return &RequestPermissions{} },
+		IDToastRequest:                      func() Packet { return &ToastRequest{} },
+		IDUpdateAbilities:                   func() Packet { return &UpdateAbilities{} },
+		IDUpdateAdventureSettings:           func() Packet { return &UpdateAdventureSettings{} },
+		IDDeathInfo:                         func() Packet { return &DeathInfo{} },
+		IDEditorNetwork:                     func() Packet { return &EditorNetwork{} },
 	}
 	for id, pk := range packets {
 		Register(id, pk)

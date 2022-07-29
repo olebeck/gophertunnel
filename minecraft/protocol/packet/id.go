@@ -179,4 +179,16 @@ const (
 	IDClientStartItemCooldown
 	IDScriptMessage
 	IDCodeBuilderSource
+	IDTickingAreasLoadStatus
+	IDDimensionData
+	IDAgentAction
+	IDChangeMobProperty
+	IDLessonProgress
+	IDRequestAbility
+	IDRequestPermissions
+	IDToastRequest
+	IDUpdateAbilities
+	IDUpdateAdventureSettings
+	IDDeathInfo
+	IDEditorNetwork
 )

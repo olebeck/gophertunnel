@@ -10,7 +10,6 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 	"github.com/sandertv/gophertunnel/minecraft/resource"
 	"go.uber.org/atomic"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -38,6 +37,11 @@ type ListenConfig struct {
 	// ListenerStatusProvider, is used as provider.
 	StatusProvider ServerStatusProvider
 
+	// AcceptedProtocols is a slice of Protocol accepted by a Listener created with this ListenConfig. The current
+	// Protocol is always added to this slice. Clients with a protocol version that is not present in this slice will
+	// be disconnected.
+	AcceptedProtocols []Protocol
+
 	// ResourcePacks is a slice of resource packs that the listener may hold. Each client will be asked to
 	// download these resource packs upon joining.
 	// This field should not be edited during runtime of the Listener to avoid race conditions. Use
@@ -45,7 +49,7 @@ type ListenConfig struct {
 	ResourcePacks []*resource.Pack
 	// Biomes contains information about all biomes that the server has registered, which the client can use
 	// to render the world more effectively. If these are nil, the default biome definitions will be used.
-	Biomes map[string]interface{}
+	Biomes map[string]any
 	// TexturePacksRequired specifies if clients that join must accept the texture pack in order for them to
 	// be able to join the server. If they don't accept, they can only leave the server.
 	TexturePacksRequired bool
@@ -62,7 +66,7 @@ type ListenConfig struct {
 // consistent API.
 type Listener struct {
 	cfg      ListenConfig
-	listener net.Listener
+	listener NetworkListener
 
 	// playerCount is the amount of players connected to the server. If MaximumPlayers is non-zero and equal
 	// to the playerCount, no more players will be accepted.
@@ -77,17 +81,13 @@ type Listener struct {
 // Listen announces on the local network address. The network is typically "raknet".
 // If the host in the address parameter is empty or a literal unspecified IP address, Listen listens on all
 // available unicast and anycast IP addresses of the local system.
-func (cfg ListenConfig) Listen(network, address string) (*Listener, error) {
-	var netListener net.Listener
-	var err error
-
-	switch network {
-	case "raknet":
-		netListener, err = raknet.ListenConfig{ErrorLog: log.New(ioutil.Discard, "", 0)}.Listen(address)
-	default:
-		// Fall back to the standard net.Listen.
-		netListener, err = net.Listen(network, address)
+func (cfg ListenConfig) Listen(network string, address string) (*Listener, error) {
+	n, ok := networkByID(network)
+	if !ok {
+		return nil, fmt.Errorf("listen: no network under id: %v", network)
 	}
+
+	netListener, err := n.Listen(address)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func Listen(network, address string) (*Listener, error) {
 
 // Accept accepts a fully connected (on Minecraft layer) connection which is ready to receive and send
 // packets. It is recommended to cast the net.Conn returned to a *minecraft.Conn so that it is possible to
-// use the conn.ReadPacket() and conn.WritePacket() methods.
+// use the Conn.ReadPacket() and Conn.WritePacket() methods.
 // Accept returns an error if the listener is closed.
 func (listener *Listener) Accept() (net.Conn, error) {
 	conn, ok := <-listener.incoming
@@ -160,12 +160,9 @@ func (listener *Listener) Close() error {
 // server name of the listener, provided the listener isn't currently hijacking the pong of another server.
 func (listener *Listener) updatePongData() {
 	s := listener.status()
-
-	rakListener := listener.listener.(*raknet.Listener)
-
-	rakListener.PongData([]byte(fmt.Sprintf("MCPE;%v;%v;%v;%v;%v;%v;Minecraft Server;%v;%v;%v;%v;",
-		s.ServerName, protocol.CurrentProtocol, protocol.CurrentVersion, s.PlayerCount, s.MaxPlayers, rakListener.ID(),
-		"Creative", 1, listener.Addr().(*net.UDPAddr).Port, listener.Addr().(*net.UDPAddr).Port,
+	listener.listener.PongData([]byte(fmt.Sprintf("MCPE;%v;%v;%v;%v;%v;%v;Gophertunnel;%v;%v;%v;%v;",
+		s.ServerName, protocol.CurrentProtocol, protocol.CurrentVersion, s.PlayerCount, s.MaxPlayers,
+		listener.listener.ID(), "Creative", 1, listener.Addr().(*net.UDPAddr).Port, listener.Addr().(*net.UDPAddr).Port,
 	)))
 }
 
@@ -205,6 +202,11 @@ func (listener *Listener) listen() {
 // accepted once its login sequence is complete.
 func (listener *Listener) createConn(netConn net.Conn) {
 	conn := newConn(netConn, listener.key, listener.cfg.ErrorLog)
+	conn.acceptedProto = append(listener.cfg.AcceptedProtocols, proto{})
+	// Temporarily set the protocol to the latest: We don't know the actual protocol until we read the Login packet.
+	conn.proto = proto{}
+	conn.pool = conn.proto.Packets()
+
 	conn.packetFunc = listener.cfg.PacketFunc
 	conn.texturePacksRequired = listener.cfg.TexturePacksRequired
 	conn.resourcePacks = listener.cfg.ResourcePacks

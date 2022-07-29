@@ -2,6 +2,8 @@ package packet
 
 import (
 	"github.com/go-gl/mathgl/mgl32"
+	"github.com/google/uuid"
+	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
@@ -37,7 +39,7 @@ type StartGame struct {
 	Yaw float32
 	// WorldSeed is the seed used to generate the world. Unlike in PC edition, the seed is a 32bit integer
 	// here.
-	WorldSeed int32
+	WorldSeed uint64
 	// SpawnBiomeType specifies if the biome that the player spawns in is user defined (through behaviour
 	// packs) or builtin. See the constants above.
 	SpawnBiomeType int16
@@ -64,6 +66,9 @@ type StartGame struct {
 	// value is set to true while the player's or the world's game mode is creative, and it's recommended to
 	// simply always set this to false as a server.
 	AchievementsDisabled bool
+	// EditorWorld is a value to dictate if the world is in editor mode, a special mode recently introduced adding
+	// "powerful tools for editing worlds, intended for experienced creators."
+	EditorWorld bool
 	// DayCycleLockTime is the time at which the day cycle was locked if the day cycle is disabled using the
 	// respective game rule. The client will maintain this time as long as the day cycle is disabled.
 	DayCycleLockTime int32
@@ -120,7 +125,7 @@ type StartGame struct {
 	StartWithMapEnabled bool
 	// PlayerPermissions is the permission level of the player. It is a value from 0-3, with 0 being visitor,
 	// 1 being member, 2 being operator and 3 being custom.
-	PlayerPermissions int32
+	PlayerPermissions uint8
 	// ServerChunkTickRadius is the radius around the player in which chunks are ticked. Most servers set this
 	// value to a fixed number, as it does not necessarily affect anything client-side.
 	ServerChunkTickRadius int32
@@ -194,9 +199,15 @@ type StartGame struct {
 	ServerAuthoritativeInventory bool
 	// GameVersion is the version of the game the server is running. The exact function of this field isn't clear.
 	GameVersion string
+	// PropertyData contains properties that should be applied on the player. These properties are the same as the
+	// ones that are sent in the SyncActorProperty packet.
+	PropertyData map[string]any
 	// ServerBlockStateChecksum is a checksum to ensure block states between the server and client match.
 	// This can simply be left empty, and the client will avoid trying to verify it.
 	ServerBlockStateChecksum uint64
+	// WorldTemplateID is a UUID that identifies the template that was used to generate the world. Servers that do not
+	// use a world based off of a template can set this to an empty UUID.
+	WorldTemplateID uuid.UUID
 }
 
 // ID ...
@@ -212,7 +223,7 @@ func (pk *StartGame) Marshal(w *protocol.Writer) {
 	w.Vec3(&pk.PlayerPosition)
 	w.Float32(&pk.Pitch)
 	w.Float32(&pk.Yaw)
-	w.Varint32(&pk.WorldSeed)
+	w.Uint64(&pk.WorldSeed)
 	w.Int16(&pk.SpawnBiomeType)
 	w.String(&pk.UserDefinedBiomeName)
 	w.Varint32(&pk.Dimension)
@@ -221,6 +232,7 @@ func (pk *StartGame) Marshal(w *protocol.Writer) {
 	w.Varint32(&pk.Difficulty)
 	w.UBlockPos(&pk.WorldSpawn)
 	w.Bool(&pk.AchievementsDisabled)
+	w.Bool(&pk.EditorWorld)
 	w.Varint32(&pk.DayCycleLockTime)
 	w.Varint32(&pk.EducationEditionOffer)
 	w.Bool(&pk.EducationFeaturesEnabled)
@@ -243,7 +255,7 @@ func (pk *StartGame) Marshal(w *protocol.Writer) {
 	w.Bool(&pk.ExperimentsPreviouslyToggled)
 	w.Bool(&pk.BonusChestEnabled)
 	w.Bool(&pk.StartWithMapEnabled)
-	w.Varint32(&pk.PlayerPermissions)
+	w.Uint8(&pk.PlayerPermissions)
 	w.Int32(&pk.ServerChunkTickRadius)
 	w.Bool(&pk.HasLockedBehaviourPack)
 	w.Bool(&pk.HasLockedTexturePack)
@@ -285,7 +297,9 @@ func (pk *StartGame) Marshal(w *protocol.Writer) {
 	w.String(&pk.MultiPlayerCorrelationID)
 	w.Bool(&pk.ServerAuthoritativeInventory)
 	w.String(&pk.GameVersion)
+	w.NBT(&pk.PropertyData, nbt.NetworkLittleEndian)
 	w.Uint64(&pk.ServerBlockStateChecksum)
+	w.UUID(&pk.WorldTemplateID)
 }
 
 // Unmarshal ...
@@ -297,7 +311,7 @@ func (pk *StartGame) Unmarshal(r *protocol.Reader) {
 	r.Vec3(&pk.PlayerPosition)
 	r.Float32(&pk.Pitch)
 	r.Float32(&pk.Yaw)
-	r.Varint32(&pk.WorldSeed)
+	r.Uint64(&pk.WorldSeed)
 	r.Int16(&pk.SpawnBiomeType)
 	r.String(&pk.UserDefinedBiomeName)
 	r.Varint32(&pk.Dimension)
@@ -306,6 +320,7 @@ func (pk *StartGame) Unmarshal(r *protocol.Reader) {
 	r.Varint32(&pk.Difficulty)
 	r.UBlockPos(&pk.WorldSpawn)
 	r.Bool(&pk.AchievementsDisabled)
+	r.Bool(&pk.EditorWorld)
 	r.Varint32(&pk.DayCycleLockTime)
 	r.Varint32(&pk.EducationEditionOffer)
 	r.Bool(&pk.EducationFeaturesEnabled)
@@ -329,7 +344,7 @@ func (pk *StartGame) Unmarshal(r *protocol.Reader) {
 	r.Bool(&pk.ExperimentsPreviouslyToggled)
 	r.Bool(&pk.BonusChestEnabled)
 	r.Bool(&pk.StartWithMapEnabled)
-	r.Varint32(&pk.PlayerPermissions)
+	r.Uint8(&pk.PlayerPermissions)
 	r.Int32(&pk.ServerChunkTickRadius)
 	r.Bool(&pk.HasLockedBehaviourPack)
 	r.Bool(&pk.HasLockedTexturePack)
@@ -371,5 +386,7 @@ func (pk *StartGame) Unmarshal(r *protocol.Reader) {
 	r.String(&pk.MultiPlayerCorrelationID)
 	r.Bool(&pk.ServerAuthoritativeInventory)
 	r.String(&pk.GameVersion)
+	r.NBT(&pk.PropertyData, nbt.NetworkLittleEndian)
 	r.Uint64(&pk.ServerBlockStateChecksum)
+	r.UUID(&pk.WorldTemplateID)
 }

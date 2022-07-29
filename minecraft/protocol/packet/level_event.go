@@ -83,6 +83,9 @@ const (
 	LevelEventParticleTurtleEgg            = 2034
 	LevelEventParticleSculkShriek          = 2035
 	LevelEventSculkCatalystBloom           = 2036
+	LevelEventSculkCharge                  = 2037
+	LevelEventSculkChargePop               = 2038
+	LevelEventSonicExplosion               = 2039
 	LevelEventStartRaining                 = 3001
 	LevelEventStartThunderstorm            = 3002
 	LevelEventStopRaining                  = 3003
