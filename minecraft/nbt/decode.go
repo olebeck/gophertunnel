@@ -49,16 +49,18 @@ func (d *Decoder) Decode(v any) error {
 //
 // The Go value passed must be a pointer to a value. Anything else will return an error before decoding.
 // The following NBT tags are decoded in the Go value passed as such:
-//   TAG_Byte: byte/uint8(/any) or bool
-//   TAG_Short: int16(/any)
-//   TAG_Int: int32(/any)
-//   TAG_Long: int64(/any)
-//   TAG_Float: float32(/any)
-//   TAG_Double: float64(/any)
-//   TAG_ByteArray: [...]byte(/any) (The value must be a byte array, not a slice)
-//   TAG_String: string(/any)
-//   TAG_List: []any(/any) (The value type of the slice may vary. Depending on the type of
-//             values in the List tag, it might be of the type of any of the other tags, such as []int64.
+//
+//	TAG_Byte: byte/uint8(/any) or bool
+//	TAG_Short: int16(/any)
+//	TAG_Int: int32(/any)
+//	TAG_Long: int64(/any)
+//	TAG_Float: float32(/any)
+//	TAG_Double: float64(/any)
+//	TAG_ByteArray: [...]byte(/any) (The value must be a byte array, not a slice)
+//	TAG_String: string(/any)
+//	TAG_List: []any(/any) (The value type of the slice may vary. Depending on the type of
+//	          values in the List tag, it might be of the type of any of the other tags, such as []int64.
+//
 // TAG_Compound: struct{...}/map[string]any(/any)
 // TAG_IntArray: [...]int32(/any) (The value must be an int32 array, not a slice)
 // TAG_LongArray: [...]int64(/any) (The value must be an int64 array, not a slice)
@@ -107,7 +109,7 @@ func (d *Decoder) unmarshalTag(val reflect.Value, tagType byte, tagName string) 
 	default:
 		return UnknownTagError{Off: d.r.off, TagType: tagType, Op: "Match"}
 	case tagEnd:
-		return UnexpectedTagError{Off: d.r.off, TagType: tagEnd}
+		return nil /* fix for invalid protocol implementations */ //UnexpectedTagError{Off: d.r.off, TagType: tagEnd}
 
 	case tagByte:
 		value, err := d.r.ReadByte()
