@@ -8,6 +8,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"log"
+	"net"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/sandertv/go-raknet"
 	"github.com/sandertv/gophertunnel/internal"
@@ -20,12 +27,6 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
-	"io"
-	"log"
-	"net"
-	"strings"
-	"sync"
-	"time"
 )
 
 // exemptedResourcePack is a resource pack that is exempted from being downloaded. These packs may be directly
@@ -725,11 +726,31 @@ type saltClaims struct {
 	Salt string `json:"salt"`
 }
 
+// fix jwt being stdencoding on some servers, having 0x00 bytes
+func fixupJWT(input []byte) string {
+	parts := bytes.Split(input, []byte("."))
+	parts_out := make([][]byte, 3)
+	for i, v := range parts[:2] {
+		dec, err := base64.RawURLEncoding.DecodeString(string(v))
+		if err != nil {
+			dec, err = base64.StdEncoding.DecodeString(string(v))
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+		dec = bytes.Split(dec, []byte("\x00"))[0]
+		parts_out[i] = make([]byte, base64.RawURLEncoding.EncodedLen(len(dec)))
+		base64.RawURLEncoding.Encode(parts_out[i], dec)
+	}
+	parts_out[2] = parts[2]
+	return string(bytes.Join(parts_out, []byte(".")))
+}
+
 // handleServerToClientHandshake handles an incoming ServerToClientHandshake packet. It initialises encryption
 // on the client side of the connection, using the hash and the public key from the server exposed in the
 // packet.
 func (conn *Conn) handleServerToClientHandshake(pk *packet.ServerToClientHandshake) error {
-	tok, err := jwt.ParseSigned(string(pk.JWT))
+	tok, err := jwt.ParseSigned(fixupJWT(pk.JWT))
 	if err != nil {
 		return fmt.Errorf("parse server token: %w", err)
 	}
