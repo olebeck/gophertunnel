@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/go-gl/mathgl/mgl32"
-	"github.com/google/uuid"
-	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"image/color"
 	"io"
 	"math"
 	"unsafe"
+
+	"github.com/go-gl/mathgl/mgl32"
+	"github.com/google/uuid"
+	"github.com/sandertv/gophertunnel/minecraft/nbt"
 )
 
 // Reader implements reading operations for reading types from Minecraft packets. Each Packet implementation
@@ -20,6 +21,7 @@ type Reader struct {
 	r interface {
 		io.Reader
 		io.ByteReader
+		Len() int
 	}
 	shieldID int32
 }
@@ -28,8 +30,13 @@ type Reader struct {
 func NewReader(r interface {
 	io.Reader
 	io.ByteReader
+	Len() int
 }, shieldID int32) *Reader {
 	return &Reader{r: r, shieldID: shieldID}
+}
+
+func (r *Reader) Len() int {
+	return r.r.Len()
 }
 
 // Uint8 reads a uint8 from the underlying buffer.
