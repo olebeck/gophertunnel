@@ -217,7 +217,7 @@ func CommandData(r *Reader, x *Command, enums []CommandEnum, suffixes []string) 
 	r.Uint16(&x.Flags)
 	r.Uint8(&x.PermissionLevel)
 	r.Int32(&aliasOffset)
-	if aliasOffset >= 0 {
+	if aliasOffset >= 0 && len(enums) > 0 {
 		r.LimitInt32(aliasOffset, 0, int32(len(enums)-1))
 		x.Aliases = enums[aliasOffset].Options
 	}
