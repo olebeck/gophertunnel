@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"fmt"
+	"log"
+	"math"
 )
 
 // Skin represents the skin of a player as sent over network. The skin holds a texture and a model, and
@@ -152,6 +154,14 @@ func SerialisedSkin(r *Reader, x *Skin) {
 	for i := uint32(0); i < count; i++ {
 		SkinPieceTint(r, &x.PieceTintColours[i])
 	}
+
+	if len(x.SkinData) > int(x.SkinImageHeight*x.SkinImageWidth*4) {
+		width_height := uint32(math.Sqrt(float64(len(x.SkinData) / 4)))
+		x.SkinImageWidth = width_height
+		x.SkinImageHeight = width_height
+		log.Printf("Warn: Skin %v server sent invalid width and height, fixed internally", x.SkinID)
+	}
+
 	if err := x.validate(); err != nil {
 		r.InvalidValue(fmt.Sprintf("Skin %v", x.SkinID), "serialised skin", err.Error())
 	}
