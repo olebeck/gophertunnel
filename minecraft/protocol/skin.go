@@ -162,6 +162,11 @@ func SerialisedSkin(r *Reader, x *Skin) {
 		log.Printf("Warn: Skin %v server sent invalid width and height, fixed internally", x.SkinID)
 	}
 
+	cape_expected_length := int(x.CapeImageHeight * x.CapeImageWidth * 4)
+	if len(x.CapeData) > cape_expected_length {
+		x.CapeData = x.CapeData[:cape_expected_length]
+	}
+
 	if err := x.validate(); err != nil {
 		r.InvalidValue(fmt.Sprintf("Skin %v", x.SkinID), "serialised skin", err.Error())
 	}
