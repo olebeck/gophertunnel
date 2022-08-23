@@ -53,13 +53,10 @@ func (pk *SpawnParticleEffect) Unmarshal(r *protocol.Reader) {
 	r.Varint64(&pk.EntityUniqueID)
 	r.Vec3(&pk.Position)
 	r.String(&pk.ParticleName)
-	r.ByteSlice(&pk.MoLangVariables)
 
-	if r.Len() > 0 { // some servers seem to sometimes not send this
-		var exists bool
-		r.Bool(&exists)
-		if exists {
-			r.ByteSlice(&pk.MoLangVariables)
-		}
+	exists := len(pk.MoLangVariables) > 0
+	r.Bool(&exists)
+	if exists {
+		r.ByteSlice(&pk.MoLangVariables)
 	}
 }
