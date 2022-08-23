@@ -60,10 +60,9 @@ func (d *Decoder) Decode(v any) error {
 //	TAG_String: string(/any)
 //	TAG_List: []any(/any) (The value type of the slice may vary. Depending on the type of
 //	          values in the List tag, it might be of the type of any of the other tags, such as []int64.
-//
-// TAG_Compound: struct{...}/map[string]any(/any)
-// TAG_IntArray: [...]int32(/any) (The value must be an int32 array, not a slice)
-// TAG_LongArray: [...]int64(/any) (The value must be an int64 array, not a slice)
+//	TAG_Compound: struct{...}/map[string]any(/any)
+//	TAG_IntArray: [...]int32(/any) (The value must be an int32 array, not a slice)
+//	TAG_LongArray: [...]int64(/any) (The value must be an int64 array, not a slice)
 //
 // Unmarshal returns an error if the data is decoded into a struct and the struct does not have all fields
 // that the matching TAG_Compound in the NBT has, in order to prevent the loss of data. For varying data, the
@@ -110,8 +109,7 @@ func (d *Decoder) unmarshalTag(val reflect.Value, t tagType, tagName string) err
 	default:
 		return UnknownTagError{Off: d.r.off, TagType: t, Op: "Match"}
 	case tagEnd:
-		return nil /* fix for invalid protocol implementations */ //UnexpectedTagError{Off: d.r.off, TagType: tagEnd}
-
+		return UnexpectedTagError{Off: d.r.off, TagType: tagEnd}
 	case tagByte:
 		value, err := d.r.ReadByte()
 		if err != nil {
