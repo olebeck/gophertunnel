@@ -71,6 +71,9 @@ type Dialer struct {
 	// the client when an XUID is present without logging in.
 	// For getting this to work with BDS, authentication should be disabled.
 	KeepXBLIdentityData bool
+
+	// DownloadPacks, if set to true the client will download all resource packs the server sends it
+	DownloadPacks bool
 }
 
 // Dial dials a Minecraft connection to the address passed over the network passed. The network is typically
@@ -161,6 +164,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 	conn.clientData = d.ClientData
 	conn.packetFunc = d.PacketFunc
 	conn.cacheEnabled = d.EnableClientCache
+	conn.downloadPacks = d.DownloadPacks
 
 	// Disable the batch packet limit so that the server can send packets as often as it wants to.
 	conn.dec.DisableBatchPacketLimit()
