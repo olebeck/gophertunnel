@@ -74,7 +74,7 @@ type Skin struct {
 }
 
 // Marshal encodes/decodes a Skin.
-func (x Skin) Marshal(r IO) any {
+func (x *Skin) Marshal(r IO) {
 	r.String(&x.SkinID)
 	r.String(&x.PlayFabID)
 	r.ByteSlice(&x.SkinResourcePatch)
@@ -114,7 +114,6 @@ func (x Skin) Marshal(r IO) any {
 	r.Bool(&x.PersonaSkin)
 	r.Bool(&x.PersonaCapeOnClassicSkin)
 	r.Bool(&x.PrimaryUser)
-	return x
 }
 
 // validate checks the skin and makes sure every one of its values are correct. It checks the image dimensions
@@ -167,14 +166,13 @@ type SkinAnimation struct {
 }
 
 // Marshal encodes/decodes a SkinAnimation.
-func (x SkinAnimation) Marshal(r IO) any {
+func (x *SkinAnimation) Marshal(r IO) {
 	r.Uint32(&x.ImageWidth)
 	r.Uint32(&x.ImageHeight)
 	r.ByteSlice(&x.ImageData)
 	r.Uint32(&x.AnimationType)
 	r.Float32(&x.FrameCount)
 	r.Uint32(&x.ExpressionType)
-	return x
 }
 
 // PersonaPiece represents a piece of a persona skin. All pieces are sent separately.
@@ -204,13 +202,12 @@ type PersonaPiece struct {
 }
 
 // Marshal encodes/decodes a PersonaPiece.
-func (x PersonaPiece) Marshal(r IO) any {
+func (x *PersonaPiece) Marshal(r IO) {
 	r.String(&x.PieceID)
 	r.String(&x.PieceType)
 	r.String(&x.PackID)
 	r.Bool(&x.Default)
 	r.String(&x.ProductID)
-	return x
 }
 
 // PersonaPieceTintColour describes the tint colours of a specific piece of a persona skin.
@@ -233,8 +230,7 @@ type PersonaPieceTintColour struct {
 }
 
 // Marshal encodes/decodes a PersonaPieceTintColour.
-func (x PersonaPieceTintColour) Marshal(r IO) any {
+func (x *PersonaPieceTintColour) Marshal(r IO) {
 	r.String(&x.PieceType)
 	FuncSliceUint32Length(r, &x.Colours, r.String)
-	return x
 }
