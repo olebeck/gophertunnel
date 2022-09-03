@@ -168,6 +168,16 @@ func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *log.Logger) *Conn {
 	return conn
 }
 
+func NewConn() *Conn {
+	return &Conn{
+		packets:    make(chan *packetData, 8),
+		additional: make(chan packet.Packet, 16),
+		hdr:        &packet.Header{},
+		pool:       packet.NewPool(),
+		proto:      proto{},
+	}
+}
+
 // IdentityData returns the identity data of the connection. It holds the UUID, XUID and username of the
 // connected client.
 func (conn *Conn) IdentityData() login.IdentityData {
@@ -1345,4 +1355,8 @@ func (conn *Conn) closeErr(op string) error {
 		return conn.wrap(DisconnectError(msg), op)
 	}
 	return conn.wrap(errClosed, op)
+}
+
+func (conn *Conn) SetGameData(data GameData) {
+	conn.gameData = data
 }

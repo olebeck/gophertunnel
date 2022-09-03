@@ -3,6 +3,7 @@ package minecraft
 import (
 	"bytes"
 	"fmt"
+
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 )
@@ -30,6 +31,10 @@ func parseData(data []byte, conn *Conn) (*packetData, error) {
 	return &packetData{h: header, full: data, payload: buf}, nil
 }
 
+func ParseData(data []byte, conn *Conn) (*packetData, error) {
+	return parseData(data, conn)
+}
+
 // decode decodes the packet payload held in the packetData and returns the packet.Packet decoded.
 func (p *packetData) decode(conn *Conn) (pks []packet.Packet, err error) {
 	// Attempt to fetch the packet with the right packet ID from the pool.
@@ -53,4 +58,8 @@ func (p *packetData) decode(conn *Conn) (pks []packet.Packet, err error) {
 		err = fmt.Errorf("%T: %v unread bytes left: 0x%x", pk, p.payload.Len(), p.payload.Bytes())
 	}
 	return conn.proto.ConvertToLatest(pk, conn), err
+}
+
+func (p *packetData) Decode(conn *Conn) (pks []packet.Packet, err error) {
+	return p.decode(conn)
 }
