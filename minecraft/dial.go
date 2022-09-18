@@ -74,6 +74,9 @@ type Dialer struct {
 
 	// DownloadPacks, if set to true the client will download all resource packs the server sends it
 	DownloadPacks bool
+
+	Key       *ecdsa.PrivateKey
+	ChainData string
 }
 
 // Dial dials a Minecraft connection to the address passed over the network passed. The network is typically
@@ -121,19 +124,25 @@ func (d Dialer) DialTimeout(network, address string, timeout time.Duration) (*Co
 	return d.DialContext(ctx, network, address)
 }
 
+// CreateChain creates a chain for minecraft connection
+func CreateChain(ctx context.Context, src oauth2.TokenSource) (key *ecdsa.PrivateKey, chainData string, err error) {
+	key, _ = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	chainData, err = authChain(ctx, src, key)
+	if err != nil {
+		return nil, "", &net.OpError{Op: "dial", Net: "minecraft", Err: err}
+	}
+	return key, chainData, nil
+}
+
 // DialContext dials a Minecraft connection to the address passed over the network passed. The network is
 // typically "raknet". A Conn is returned which may be used to receive packets from and send packets to.
 // If a connection is not established before the context passed is cancelled, DialContext returns an error.
 func (d Dialer) DialContext(ctx context.Context, network, address string) (conn *Conn, err error) {
-	key, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-
-	var chainData string
-	if d.TokenSource != nil {
-		chainData, err = authChain(ctx, d.TokenSource, key)
-		if err != nil {
-			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
-		}
+	key, chainData, err := CreateChain(ctx, d.TokenSource)
+	if err != nil {
+		return nil, err
 	}
+
 	if d.ErrorLog == nil {
 		d.ErrorLog = log.New(os.Stderr, "", log.LstdFlags)
 	}
