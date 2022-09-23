@@ -138,9 +138,11 @@ func CreateChain(ctx context.Context, src oauth2.TokenSource) (key *ecdsa.Privat
 // typically "raknet". A Conn is returned which may be used to receive packets from and send packets to.
 // If a connection is not established before the context passed is cancelled, DialContext returns an error.
 func (d Dialer) DialContext(ctx context.Context, network, address string) (conn *Conn, err error) {
-	key, chainData, err := CreateChain(ctx, d.TokenSource)
-	if err != nil {
-		return nil, err
+	if d.Key == nil || d.ChainData == "" {
+		d.Key, d.ChainData, err = CreateChain(ctx, d.TokenSource)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if d.ErrorLog == nil {
@@ -166,7 +168,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		return nil, err
 	}
 
-	conn = newConn(netConn, key, d.ErrorLog)
+	conn = newConn(netConn, d.Key, d.ErrorLog)
 	conn.proto = d.Protocol
 	conn.pool = conn.proto.Packets()
 	conn.identityData = d.IdentityData
@@ -189,13 +191,13 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		if !d.KeepXBLIdentityData {
 			clearXBLIdentityData(&conn.identityData)
 		}
-		request = login.EncodeOffline(conn.identityData, conn.clientData, key)
+		request = login.EncodeOffline(conn.identityData, conn.clientData, d.Key)
 	} else {
 		// We login as an Android device and this will show up in the 'titleId' field in the JWT chain, which
 		// we can't edit. We just enforce Android data for logging in.
 		setAndroidData(&conn.clientData)
 
-		request = login.Encode(chainData, conn.clientData, key)
+		request = login.Encode(d.ChainData, conn.clientData, d.Key)
 		identityData, _, _, _ := login.Parse(request)
 		// If we got the identity data from Minecraft auth, we need to make sure we set it in the Conn too, as
 		// we are not aware of the identity data ourselves yet.
