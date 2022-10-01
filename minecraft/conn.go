@@ -684,13 +684,13 @@ func (conn *Conn) handleRequestNetworkSettings(pk *packet.RequestNetworkSettings
 	conn.expect(packet.IDLogin)
 	if err := conn.WritePacket(&packet.NetworkSettings{
 		CompressionThreshold: 512,
-		CompressionAlgorithm: packet.SnappyCompression{},
+		CompressionAlgorithm: packet.FlateCompression{},
 	}); err != nil {
 		return fmt.Errorf("error sending network settings: %v", err)
 	}
 	_ = conn.Flush()
-	conn.enc.EnableCompression(packet.SnappyCompression{})
-	conn.dec.EnableCompression(packet.SnappyCompression{})
+	conn.enc.EnableCompression(packet.FlateCompression{})
+	conn.dec.EnableCompression(packet.FlateCompression{})
 	return nil
 }
 
@@ -1030,6 +1030,7 @@ func (conn *Conn) startGame() {
 		PlayerMovementSettings:       data.PlayerMovementSettings,
 		WorldGameMode:                data.WorldGameMode,
 		ServerAuthoritativeInventory: data.ServerAuthoritativeInventory,
+		PlayerPermissions:            data.PlayerPermissions,
 		Experiments:                  data.Experiments,
 		ClientSideGeneration:         data.ClientSideGeneration,
 		ChatRestrictionLevel:         data.ChatRestrictionLevel,
@@ -1217,6 +1218,7 @@ func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
 		PlayerMovementSettings:       pk.PlayerMovementSettings,
 		WorldGameMode:                pk.WorldGameMode,
 		ServerAuthoritativeInventory: pk.ServerAuthoritativeInventory,
+		PlayerPermissions:            pk.PlayerPermissions,
 		ChatRestrictionLevel:         pk.ChatRestrictionLevel,
 		DisablePlayerInteractions:    pk.DisablePlayerInteractions,
 		ClientSideGeneration:         pk.ClientSideGeneration,
