@@ -55,11 +55,24 @@ type Dialer struct {
 	// from which the packet originated, and the destination address.
 	PacketFunc func(header packet.Header, payload []byte, src, dst net.Addr)
 
+	// DownloadResourcePack is called individually for every texture and behaviour pack sent by the connection when
+	// using Dialer.Dial(), and can be used to stop the pack from being downloaded. The function is called with the UUID
+	// and version of the resource pack, and the boolean returned determines if the pack will be downloaded or not.
+	DownloadResourcePack func(id uuid.UUID, version string) bool
+
 	// Protocol is the Protocol version used to communicate with the target server. By default, this field is
 	// set to the current protocol as implemented in the minecraft/protocol package. Note that packets written
 	// to and read from the Conn are always any of those found in the protocol/packet package, as packets
 	// are converted from and to this Protocol.
 	Protocol Protocol
+
+	// FlushRate is the rate at which packets sent are flushed. Packets are buffered for a duration up to
+	// FlushRate and are compressed/encrypted together to improve compression ratios. The lower this
+	// time.Duration, the lower the latency but the less efficient both network and cpu wise.
+	// The default FlushRate (when set to 0) is time.Second/20. If FlushRate is set negative, packets
+	// will not be flushed automatically. In this case, calling `(*Conn).Flush()` is required after any
+	// calls to `(*Conn).Write()` or `(*Conn).WritePacket()` to send the packets over network.
+	FlushRate time.Duration
 
 	// EnableClientCache, if set to true, enables the client blob cache for the client. This means that the
 	// server will send chunks as blobs, which may be saved by the client so that chunks don't have to be
@@ -71,9 +84,6 @@ type Dialer struct {
 	// the client when an XUID is present without logging in.
 	// For getting this to work with BDS, authentication should be disabled.
 	KeepXBLIdentityData bool
-
-	// DownloadPacks, if set to true the client will download all resource packs the server sends it
-	DownloadPacks bool
 
 	Key       *ecdsa.PrivateKey
 	ChainData string
@@ -149,7 +159,10 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		d.ErrorLog = log.New(os.Stderr, "", log.LstdFlags)
 	}
 	if d.Protocol == nil {
-		d.Protocol = proto{}
+		d.Protocol = DefaultProtocol
+	}
+	if d.FlushRate == 0 {
+		d.FlushRate = time.Second / 20
 	}
 
 	n, ok := networkByID(network)
@@ -168,14 +181,13 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		return nil, err
 	}
 
-	conn = newConn(netConn, d.Key, d.ErrorLog)
-	conn.proto = d.Protocol
+	conn = newConn(netConn, d.Key, d.ErrorLog, d.Protocol, d.FlushRate)
 	conn.pool = conn.proto.Packets()
 	conn.identityData = d.IdentityData
 	conn.clientData = d.ClientData
 	conn.packetFunc = d.PacketFunc
+	conn.downloadResourcePack = d.DownloadResourcePack
 	conn.cacheEnabled = d.EnableClientCache
-	conn.downloadPacks = d.DownloadPacks
 
 	// Disable the batch packet limit so that the server can send packets as often as it wants to.
 	conn.dec.DisableBatchPacketLimit()

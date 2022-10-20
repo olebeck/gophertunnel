@@ -63,6 +63,7 @@ type Conn struct {
 	pool          packet.Pool
 	enc           *packet.Encoder
 	dec           *packet.Decoder
+	compression   packet.Compression
 
 	identityData login.IdentityData
 	clientData   login.ClientData
@@ -113,9 +114,6 @@ type Conn struct {
 	// resourcePacks is a slice of resource packs that the listener may hold. Each client will be asked to
 	// download these resource packs upon joining.
 	resourcePacks []*resource.Pack
-	// downloadPacks is a bool, if false the client wont download any resource packs
-	downloadPacks bool
-
 	// biomes is a map of biome definitions that the listener may hold. Each client will be sent these biome
 	// definitions upon joining.
 	biomes map[string]any
@@ -123,6 +121,12 @@ type Conn struct {
 	// be able to join the server. If they don't accept, they can only leave the server.
 	texturePacksRequired bool
 	packQueue            *resourcePackQueue
+	// downloadResourcePack is an optional function passed to a Dial() call. If set, each resource pack received
+	// from the server will call this function to see if it should be downloaded or not.
+	downloadResourcePack func(id uuid.UUID, version string) bool
+	// ignoredResourcePacks is a slice of resource packs that are not being downloaded due to the downloadResourcePack
+	// func returning false for the specific pack.
+	ignoredResourcePacks []exemptedResourcePack
 
 	cacheEnabled bool
 
@@ -141,7 +145,7 @@ type Conn struct {
 // Minecraft packets to that net.Conn.
 // newConn accepts a private key which will be used to identify the connection. If a nil key is passed, the
 // key is generated.
-func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *log.Logger) *Conn {
+func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *log.Logger, proto Protocol, flushRate time.Duration) *Conn {
 	conn := &Conn{
 		enc:        packet.NewEncoder(netConn),
 		dec:        packet.NewDecoder(netConn),
@@ -154,12 +158,16 @@ func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *log.Logger) *Conn {
 		privateKey: key,
 		log:        log,
 		hdr:        &packet.Header{},
+		proto:      proto,
 	}
 	conn.expectedIDs.Store([]uint32{packet.IDRequestNetworkSettings})
 	_, _ = rand.Read(conn.salt)
 
+	if flushRate <= 0 {
+		return conn
+	}
 	go func() {
-		ticker := time.NewTicker(time.Second / 20)
+		ticker := time.NewTicker(flushRate)
 		defer ticker.Stop()
 		for range ticker.C {
 			if err := conn.Flush(); err != nil {
@@ -288,10 +296,6 @@ func (conn *Conn) DoSpawnTimeout(timeout time.Duration) error {
 // DoSpawnContext will start the spawning sequence using the game data found in conn.GameData(), which was
 // sent earlier by the server.
 func (conn *Conn) DoSpawnContext(ctx context.Context) error {
-	if !conn.gameDataReceived.Load() {
-		panic("(*Conn).DoSpawn must only be called on Dialer connections")
-	}
-
 	select {
 	case <-conn.close:
 		return conn.closeErr("do spawn")
@@ -684,13 +688,13 @@ func (conn *Conn) handleRequestNetworkSettings(pk *packet.RequestNetworkSettings
 	conn.expect(packet.IDLogin)
 	if err := conn.WritePacket(&packet.NetworkSettings{
 		CompressionThreshold: 512,
-		CompressionAlgorithm: packet.FlateCompression{},
+		CompressionAlgorithm: conn.compression,
 	}); err != nil {
 		return fmt.Errorf("error sending network settings: %v", err)
 	}
 	_ = conn.Flush()
-	conn.enc.EnableCompression(packet.FlateCompression{})
-	conn.dec.EnableCompression(packet.FlateCompression{})
+	conn.enc.EnableCompression(conn.compression)
+	conn.dec.EnableCompression(conn.compression)
 	return nil
 }
 
@@ -848,49 +852,63 @@ func (conn *Conn) handleResourcePacksInfo(pk *packet.ResourcePacksInfo) error {
 	}
 	packsToDownload := make([]string, 0, len(pk.TexturePacks)+len(pk.BehaviourPacks))
 
-	if conn.downloadPacks {
-		for _, pack := range pk.TexturePacks {
-			if _, ok := conn.packQueue.downloadingPacks[pack.UUID]; ok {
-				conn.log.Printf("duplicate texture pack entry %v in resource pack info\n", pack.UUID)
-				conn.packQueue.packAmount--
-				continue
-			}
-			// This UUID_Version is a hack Mojang put in place.
-			packsToDownload = append(packsToDownload, pack.UUID+"_"+pack.Version)
-			conn.packQueue.downloadingPacks[pack.UUID] = downloadingPack{
-				size:       pack.Size,
-				buf:        bytes.NewBuffer(make([]byte, 0, pack.Size)),
-				newFrag:    make(chan []byte),
-				contentKey: pack.ContentKey,
-			}
+	for _, pack := range pk.TexturePacks {
+		if _, ok := conn.packQueue.downloadingPacks[pack.UUID]; ok {
+			conn.log.Printf("duplicate texture pack entry %v in resource pack info\n", pack.UUID)
+			conn.packQueue.packAmount--
+			continue
 		}
-		for _, pack := range pk.BehaviourPacks {
-			if _, ok := conn.packQueue.downloadingPacks[pack.UUID]; ok {
-				conn.log.Printf("duplicate behaviour pack entry %v in resource pack info\n", pack.UUID)
-				conn.packQueue.packAmount--
-				continue
-			}
-			// This UUID_Version is a hack Mojang put in place.
-			packsToDownload = append(packsToDownload, pack.UUID+"_"+pack.Version)
-			conn.packQueue.downloadingPacks[pack.UUID] = downloadingPack{
-				size:       pack.Size,
-				buf:        bytes.NewBuffer(make([]byte, 0, pack.Size)),
-				newFrag:    make(chan []byte),
-				contentKey: pack.ContentKey,
-			}
-		}
-
-		if len(packsToDownload) != 0 {
-			conn.expect(packet.IDResourcePackDataInfo, packet.IDResourcePackChunkData)
-			_ = conn.WritePacket(&packet.ResourcePackClientResponse{
-				Response:        packet.PackResponseSendPacks,
-				PacksToDownload: packsToDownload,
+		if conn.downloadResourcePack != nil && !conn.downloadResourcePack(uuid.MustParse(pack.UUID), pack.Version) {
+			conn.ignoredResourcePacks = append(conn.ignoredResourcePacks, exemptedResourcePack{
+				uuid:    pack.UUID,
+				version: pack.Version,
 			})
-			return nil
+			conn.packQueue.packAmount--
+			continue
+		}
+		// This UUID_Version is a hack Mojang put in place.
+		packsToDownload = append(packsToDownload, pack.UUID+"_"+pack.Version)
+		conn.packQueue.downloadingPacks[pack.UUID] = downloadingPack{
+			size:       pack.Size,
+			buf:        bytes.NewBuffer(make([]byte, 0, pack.Size)),
+			newFrag:    make(chan []byte),
+			contentKey: pack.ContentKey,
+		}
+	}
+	for _, pack := range pk.BehaviourPacks {
+		if _, ok := conn.packQueue.downloadingPacks[pack.UUID]; ok {
+			conn.log.Printf("duplicate behaviour pack entry %v in resource pack info\n", pack.UUID)
+			conn.packQueue.packAmount--
+			continue
+		}
+		if conn.downloadResourcePack != nil && !conn.downloadResourcePack(uuid.MustParse(pack.UUID), pack.Version) {
+			conn.ignoredResourcePacks = append(conn.ignoredResourcePacks, exemptedResourcePack{
+				uuid:    pack.UUID,
+				version: pack.Version,
+			})
+			conn.packQueue.packAmount--
+			continue
+		}
+		// This UUID_Version is a hack Mojang put in place.
+		packsToDownload = append(packsToDownload, pack.UUID+"_"+pack.Version)
+		conn.packQueue.downloadingPacks[pack.UUID] = downloadingPack{
+			size:       pack.Size,
+			buf:        bytes.NewBuffer(make([]byte, 0, pack.Size)),
+			newFrag:    make(chan []byte),
+			contentKey: pack.ContentKey,
 		}
 	}
 
+	if len(packsToDownload) != 0 {
+		conn.expect(packet.IDResourcePackDataInfo, packet.IDResourcePackChunkData)
+		_ = conn.WritePacket(&packet.ResourcePackClientResponse{
+			Response:        packet.PackResponseSendPacks,
+			PacksToDownload: packsToDownload,
+		})
+		return nil
+	}
 	conn.expect(packet.IDResourcePackStack)
+
 	_ = conn.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseAllPacksDownloaded})
 	return nil
 }
@@ -898,29 +916,26 @@ func (conn *Conn) handleResourcePacksInfo(pk *packet.ResourcePacksInfo) error {
 // handleResourcePackStack handles a ResourcePackStack packet sent by the server. The stack defines the order
 // that resource packs are applied in.
 func (conn *Conn) handleResourcePackStack(pk *packet.ResourcePackStack) error {
-	if conn.downloadPacks {
-		// We currently don't apply resource packs in any way, so instead we just check if all resource packs in
-		// the stacks are also downloaded.
-		for _, pack := range pk.TexturePacks {
-			for i, behaviourPack := range pk.BehaviourPacks {
-				if pack.UUID == behaviourPack.UUID {
-					// We had a behaviour pack with the same UUID as the texture pack, so we drop the texture
-					// pack and log it.
-					conn.log.Printf("dropping behaviour pack with UUID %v due to a texture pack with the same UUID\n", pack.UUID)
-					pk.BehaviourPacks = append(pk.BehaviourPacks[:i], pk.BehaviourPacks[i+1:]...)
-				}
-			}
-			if !conn.hasPack(pack.UUID, pack.Version, false) {
-				return fmt.Errorf("texture pack {uuid=%v, version=%v} not downloaded", pack.UUID, pack.Version)
+	// We currently don't apply resource packs in any way, so instead we just check if all resource packs in
+	// the stacks are also downloaded.
+	for _, pack := range pk.TexturePacks {
+		for i, behaviourPack := range pk.BehaviourPacks {
+			if pack.UUID == behaviourPack.UUID {
+				// We had a behaviour pack with the same UUID as the texture pack, so we drop the texture
+				// pack and log it.
+				conn.log.Printf("dropping behaviour pack with UUID %v due to a texture pack with the same UUID\n", pack.UUID)
+				pk.BehaviourPacks = append(pk.BehaviourPacks[:i], pk.BehaviourPacks[i+1:]...)
 			}
 		}
-		for _, pack := range pk.BehaviourPacks {
-			if !conn.hasPack(pack.UUID, pack.Version, true) {
-				return fmt.Errorf("behaviour pack {uuid=%v, version=%v} not downloaded", pack.UUID, pack.Version)
-			}
+		if !conn.hasPack(pack.UUID, pack.Version, false) {
+			return fmt.Errorf("texture pack {uuid=%v, version=%v} not downloaded", pack.UUID, pack.Version)
 		}
 	}
-
+	for _, pack := range pk.BehaviourPacks {
+		if !conn.hasPack(pack.UUID, pack.Version, true) {
+			return fmt.Errorf("behaviour pack {uuid=%v, version=%v} not downloaded", pack.UUID, pack.Version)
+		}
+	}
 	conn.expect(packet.IDStartGame)
 	_ = conn.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseCompleted})
 	return nil
@@ -939,6 +954,11 @@ func (conn *Conn) hasPack(uuid string, version string, hasBehaviours bool) bool 
 	conn.packMu.Lock()
 	defer conn.packMu.Unlock()
 
+	for _, ignored := range conn.ignoredResourcePacks {
+		if ignored.uuid == uuid && ignored.version == version {
+			return true
+		}
+	}
 	for _, pack := range conn.resourcePacks {
 		if pack.UUID() == uuid && pack.Version() == version && pack.HasBehaviours() == hasBehaviours {
 			return true
@@ -1038,6 +1058,7 @@ func (conn *Conn) startGame() {
 		BaseGameVersion:              data.BaseGameVersion,
 		GameVersion:                  protocol.CurrentVersion,
 	})
+	_ = conn.Flush()
 	conn.expect(packet.IDRequestChunkRadius, packet.IDSetLocalPlayerAsInitialised)
 }
 
@@ -1277,9 +1298,8 @@ func (conn *Conn) handleChunkRadiusUpdated(pk *packet.ChunkRadiusUpdated) error 
 
 	conn.gameData.ChunkRadius = pk.ChunkRadius
 	conn.gameDataReceived.Store(true)
-	conn.loggedIn = true
-	conn.waitingForSpawn.Store(true)
 
+	conn.tryFinaliseClientConn()
 	return nil
 }
 
@@ -1315,10 +1335,8 @@ func (conn *Conn) handlePlayStatus(pk *packet.PlayStatus) error {
 		return fmt.Errorf("server outdated")
 	case packet.PlayStatusPlayerSpawn:
 		// We've spawned and can send the last packet in the spawn sequence.
-		if conn.waitingForSpawn.CAS(true, false) {
-			close(conn.spawn)
-			_ = conn.WritePacket(&packet.SetLocalPlayerAsInitialised{EntityRuntimeID: conn.gameData.EntityRuntimeID})
-		}
+		conn.waitingForSpawn.Store(true)
+		conn.tryFinaliseClientConn()
 		return nil
 	case packet.PlayStatusLoginFailedInvalidTenant:
 		_ = conn.Close()
@@ -1340,6 +1358,20 @@ func (conn *Conn) handlePlayStatus(pk *packet.PlayStatus) error {
 		return fmt.Errorf("cannot join an editor game on vanilla")
 	default:
 		return fmt.Errorf("unknown play status in PlayStatus packet %v", pk.Status)
+	}
+}
+
+// tryFinaliseClientConn attempts to finalise the client connection by sending
+// the SetLocalPlayerAsInitialised packet when if the ChunkRadiusUpdated and
+// PlayStatus packets have been sent.
+func (conn *Conn) tryFinaliseClientConn() {
+	if conn.waitingForSpawn.Load() && conn.gameDataReceived.Load() {
+		conn.waitingForSpawn.Toggle()
+		conn.gameDataReceived.Toggle()
+
+		close(conn.spawn)
+		conn.loggedIn = true
+		_ = conn.WritePacket(&packet.SetLocalPlayerAsInitialised{EntityRuntimeID: conn.gameData.EntityRuntimeID})
 	}
 }
 
