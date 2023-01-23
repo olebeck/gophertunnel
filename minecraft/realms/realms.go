@@ -92,6 +92,15 @@ type Realm struct {
 	client *Client
 }
 
+type JoinError struct {
+	Code int    `json:"errorCode"`
+	Msg  string `json:"errorMsg"`
+}
+
+func (e *JoinError) Error() string {
+	return fmt.Sprintf("JoinError %s", e.Msg)
+}
+
 // Address requests the address and port to connect to this realm from the api,
 // will wait for the realm to start if it is currently offline.
 func (r *Realm) Address(ctx context.Context) (address string, err error) {
@@ -103,7 +112,13 @@ func (r *Realm) Address(ctx context.Context) (address string, err error) {
 			if status == 503 && ctx.Err() == nil {
 				continue
 			}
-			return "", err
+
+			var jerr JoinError
+			if _err := json.Unmarshal(body, &jerr); _err != nil {
+				return "", err
+			}
+
+			return "", &jerr
 		}
 
 		var data struct {
