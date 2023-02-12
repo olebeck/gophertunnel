@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sandertv/gophertunnel/minecraft/auth"
+	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"golang.org/x/oauth2"
 )
 
@@ -16,14 +17,16 @@ var RealmsAPIBase = "https://pocket.realms.minecraft.net/"
 
 // Client is an instance of the realms api with a token.
 type Client struct {
-	tokenSrc oauth2.TokenSource
-	xblToken *auth.XBLToken
+	ClientVersion string
+	tokenSrc      oauth2.TokenSource
+	xblToken      *auth.XBLToken
 }
 
 // NewClient returns a new Client instance with the supplied token source for authentication.
 func NewClient(src oauth2.TokenSource) *Client {
 	return &Client{
-		tokenSrc: src,
+		tokenSrc:      src,
+		ClientVersion: protocol.CurrentVersion,
 	}
 }
 
@@ -178,7 +181,7 @@ func (r *Client) Request(ctx context.Context, path string) (body []byte, err err
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "MCPE/UWP")
-	req.Header.Set("Client-Version", "1.10.1")
+	req.Header.Set("Client-Version", r.ClientVersion)
 	xbl, err := r.xboxToken(ctx)
 	if err != nil {
 		return nil, err
