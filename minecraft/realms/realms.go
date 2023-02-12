@@ -12,6 +12,8 @@ import (
 	"golang.org/x/oauth2"
 )
 
+var RealmsAPIBase = "https://pocket.realms.minecraft.net/"
+
 // Client is an instance of the realms api with a token.
 type Client struct {
 	tokenSrc oauth2.TokenSource
@@ -92,13 +94,14 @@ type Realm struct {
 	client *Client
 }
 
-type JoinError struct {
-	Code int    `json:"errorCode"`
-	Msg  string `json:"errorMsg"`
+type APIError struct {
+	StatusCode int
+	Code       int    `json:"errorCode"`
+	Msg        string `json:"errorMsg"`
 }
 
-func (e *JoinError) Error() string {
-	return fmt.Sprintf("JoinError %s", e.Msg)
+func (e *APIError) Error() string {
+	return fmt.Sprintf("APIError %d %d %s", e.StatusCode, e.Code, e.Msg)
 }
 
 // Address requests the address and port to connect to this realm from the api,
@@ -107,18 +110,18 @@ func (r *Realm) Address(ctx context.Context) (address string, err error) {
 	ticker := time.NewTicker(time.Second * 3)
 	defer ticker.Stop()
 	for range ticker.C {
-		body, status, err := r.client.request(ctx, fmt.Sprintf("/worlds/%d/join", r.ID))
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+
+		body, err := r.client.Request(ctx, fmt.Sprintf("/worlds/%d/join", r.ID))
 		if err != nil {
-			if status == 503 && ctx.Err() == nil {
-				continue
+			if err, ok := err.(*APIError); ok {
+				if err.StatusCode == 503 {
+					continue
+				}
 			}
-
-			var jerr JoinError
-			if _err := json.Unmarshal(body, &jerr); _err != nil {
-				return "", err
-			}
-
-			return "", &jerr
+			return "", err
 		}
 
 		var data struct {
@@ -136,7 +139,7 @@ func (r *Realm) Address(ctx context.Context) (address string, err error) {
 // OnlinePlayers gets all the players currently on this realm,
 // Returns a 403 error if the current user is not the owner of the Realm.
 func (r *Realm) OnlinePlayers(ctx context.Context) (players []Player, err error) {
-	body, _, err := r.client.request(ctx, fmt.Sprintf("/worlds/%d", r.ID))
+	body, err := r.client.Request(ctx, fmt.Sprintf("/worlds/%d", r.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -160,48 +163,55 @@ func (r *Client) xboxToken(ctx context.Context) (*auth.XBLToken, error) {
 		return nil, err
 	}
 
-	r.xblToken, err = auth.RequestXBLToken(ctx, t, "https://pocket.realms.minecraft.net/")
+	r.xblToken, err = auth.RequestXBLToken(ctx, t, RealmsAPIBase)
 	return r.xblToken, err
 }
 
-// request sends an http get request to path with the right headers for the api set.
-func (r *Client) request(ctx context.Context, path string) (body []byte, status int, err error) {
-	if string(path[0]) != "/" {
-		path = "/" + path
+// Request sends an http get request to path with the right headers for the api set.
+func (r *Client) Request(ctx context.Context, path string) (body []byte, err error) {
+	if string(path[0]) == "/" {
+		path = path[1:]
 	}
-	req, err := http.NewRequest("GET", fmt.Sprintf("https://pocket.realms.minecraft.net%s", path), nil)
+	url := fmt.Sprintf("%s%s", RealmsAPIBase, path)
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	req.Header.Set("User-Agent", "MCPE/UWP")
 	req.Header.Set("Client-Version", "1.10.1")
 	xbl, err := r.xboxToken(ctx)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	xbl.SetAuthHeader(req)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	body, err = io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, resp.StatusCode, err
+		return nil, err
 	}
 
 	if resp.StatusCode >= 400 {
-		return body, resp.StatusCode, fmt.Errorf("HTTP Error: %d", resp.StatusCode)
+		var jerr APIError
+		if _err := json.Unmarshal(body, &jerr); _err != nil {
+			return nil, fmt.Errorf("HTTP %s Error: %d", url, resp.StatusCode)
+		}
+		jerr.StatusCode = resp.StatusCode
+
+		return nil, &jerr
 	}
 
-	return body, resp.StatusCode, nil
+	return body, nil
 }
 
 // Realm gets a realm by its invite code.
 func (c *Client) Realm(ctx context.Context, code string) (Realm, error) {
-	body, _, err := c.request(ctx, fmt.Sprintf("/worlds/v1/link/%s", code))
+	body, err := c.Request(ctx, fmt.Sprintf("/worlds/v1/link/%s", code))
 	if err != nil {
 		return Realm{}, err
 	}
@@ -217,7 +227,7 @@ func (c *Client) Realm(ctx context.Context, code string) (Realm, error) {
 
 // Realms gets a list of all realms the token has access to.
 func (c *Client) Realms(ctx context.Context) ([]Realm, error) {
-	body, _, err := c.request(ctx, "/worlds")
+	body, err := c.Request(ctx, "/worlds")
 	if err != nil {
 		return nil, err
 	}
