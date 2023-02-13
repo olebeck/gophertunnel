@@ -107,6 +107,14 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("APIError %d %d %s", e.StatusCode, e.Code, e.Msg)
 }
 
+type HTTPError struct {
+	StatusCode int
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("HTTPError %d", e.StatusCode)
+}
+
 // Address requests the address and port to connect to this realm from the api,
 // will wait for the realm to start if it is currently offline.
 func (r *Realm) Address(ctx context.Context) (address string, err error) {
@@ -119,7 +127,7 @@ func (r *Realm) Address(ctx context.Context) (address string, err error) {
 
 		body, err := r.client.Request(ctx, fmt.Sprintf("/worlds/%d/join", r.ID))
 		if err != nil {
-			if err, ok := err.(*APIError); ok {
+			if err, ok := err.(*HTTPError); ok {
 				if err.StatusCode == 503 {
 					continue
 				}
@@ -202,7 +210,7 @@ func (r *Client) Request(ctx context.Context, path string) (body []byte, err err
 	if resp.StatusCode >= 400 {
 		var jerr APIError
 		if _err := json.Unmarshal(body, &jerr); _err != nil {
-			return nil, fmt.Errorf("HTTP %s Error: %d", url, resp.StatusCode)
+			return nil, &HTTPError{StatusCode: resp.StatusCode}
 		}
 		jerr.StatusCode = resp.StatusCode
 
