@@ -164,33 +164,43 @@ func (r *Realm) OnlinePlayers(ctx context.Context) (players []Player, err error)
 }
 
 // xboxToken returns the xbox token used for the api.
-func (r *Client) xboxToken(ctx context.Context) (*auth.XBLToken, error) {
-	if r.xblToken != nil {
-		return r.xblToken, nil
+func (c *Client) xboxToken(ctx context.Context) (*auth.XBLToken, error) {
+	if c.xblToken != nil {
+		return c.xblToken, nil
 	}
 
-	t, err := r.tokenSrc.Token()
+	t, err := c.tokenSrc.Token()
 	if err != nil {
 		return nil, err
 	}
 
-	r.xblToken, err = auth.RequestXBLToken(ctx, t, RealmsAPIBase)
-	return r.xblToken, err
+	c.xblToken, err = auth.RequestXBLToken(ctx, t, RealmsAPIBase)
+	return c.xblToken, err
 }
 
 // Request sends an http get request to path with the right headers for the api set.
-func (r *Client) Request(ctx context.Context, path string) (body []byte, err error) {
+func (c *Client) Request(ctx context.Context, path string) (body []byte, err error) {
+	body, err = c.RequestWithMethod(ctx, path, "GET", nil, "")
+	return
+}
+
+func (c *Client) RequestWithMethod(ctx context.Context, path string, method string, ReqBody io.Reader, ContentType string) (RespBody []byte, err error) {
 	if string(path[0]) == "/" {
 		path = path[1:]
 	}
 	url := fmt.Sprintf("%s%s", RealmsAPIBase, path)
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest(method, url, ReqBody)
 	if err != nil {
 		return nil, err
 	}
+
+	if ContentType != "" {
+		req.Header.Set("Content-Type", ContentType)
+	}
+
 	req.Header.Set("User-Agent", "MCPE/UWP")
-	req.Header.Set("Client-Version", r.ClientVersion)
-	xbl, err := r.xboxToken(ctx)
+	req.Header.Set("Client-Version", c.ClientVersion)
+	xbl, err := c.xboxToken(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -202,22 +212,22 @@ func (r *Client) Request(ctx context.Context, path string) (body []byte, err err
 	}
 	defer resp.Body.Close()
 
-	body, err = io.ReadAll(resp.Body)
+	RespBody, err = io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
 	if resp.StatusCode >= 400 {
 		var jerr APIError
-		if _err := json.Unmarshal(body, &jerr); _err != nil {
-			return nil, &HTTPError{StatusCode: resp.StatusCode}
+		if _err := json.Unmarshal(RespBody, &jerr); _err != nil {
+			return RespBody, &HTTPError{StatusCode: resp.StatusCode}
 		}
 		jerr.StatusCode = resp.StatusCode
 
-		return nil, &jerr
+		return RespBody, &jerr
 	}
 
-	return body, nil
+	return RespBody, nil
 }
 
 // Realm gets a realm by its invite code.
