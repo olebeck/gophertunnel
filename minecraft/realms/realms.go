@@ -163,8 +163,8 @@ func (r *Realm) OnlinePlayers(ctx context.Context) (players []Player, err error)
 	return response.Players, nil
 }
 
-// xboxToken returns the xbox token used for the api.
-func (c *Client) xboxToken(ctx context.Context) (*auth.XBLToken, error) {
+// XboxToken returns the xbox token used for the api.
+func (c *Client) XboxToken(ctx context.Context) (*auth.XBLToken, error) {
 	if c.xblToken != nil {
 		return c.xblToken, nil
 	}
@@ -200,7 +200,7 @@ func (c *Client) RequestWithMethod(ctx context.Context, path string, method stri
 
 	req.Header.Set("User-Agent", "MCPE/UWP")
 	req.Header.Set("Client-Version", c.ClientVersion)
-	xbl, err := c.xboxToken(ctx)
+	xbl, err := c.XboxToken(ctx)
 	if err != nil {
 		return nil, err
 	}
