@@ -222,28 +222,28 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 
 	conn.expect(packet.IDNetworkSettings)
 	if err := conn.WritePacket(&packet.RequestNetworkSettings{ClientProtocol: d.Protocol.ID()}); err != nil {
-		return nil, err
+		return conn, err
 	}
 	_ = conn.Flush()
 
 	select {
 	case <-conn.close:
-		return nil, conn.closeErr("dial")
+		return conn, conn.closeErr("dial")
 	case <-ctx.Done():
-		return nil, conn.wrap(ctx.Err(), "dial")
+		return conn, conn.wrap(ctx.Err(), "dial")
 	case <-l:
 		// We've received our network settings, so we can now send our login request.
 		conn.expect(packet.IDServerToClientHandshake, packet.IDPlayStatus)
 		if err := conn.WritePacket(&packet.Login{ConnectionRequest: request, ClientProtocol: d.Protocol.ID()}); err != nil {
-			return nil, err
+			return conn, err
 		}
 		_ = conn.Flush()
 
 		select {
 		case <-conn.close:
-			return nil, conn.closeErr("dial")
+			return conn, conn.closeErr("dial")
 		case <-ctx.Done():
-			return nil, conn.wrap(ctx.Err(), "dial")
+			return conn, conn.wrap(ctx.Err(), "dial")
 		case <-c:
 			// We've connected successfully. We return the connection and no error.
 			return conn, nil
