@@ -218,13 +218,13 @@ func (c *Client) RequestWithMethod(ctx context.Context, path string, method stri
 	}
 
 	if resp.StatusCode >= 400 {
-		var jerr APIError
-		if _err := json.Unmarshal(RespBody, &jerr); _err != nil {
+		var apiError APIError
+		if _err := json.Unmarshal(RespBody, &apiError); _err != nil {
 			return RespBody, &HTTPError{StatusCode: resp.StatusCode}
 		}
-		jerr.StatusCode = resp.StatusCode
+		apiError.StatusCode = resp.StatusCode
 
-		return RespBody, &jerr
+		return RespBody, &apiError
 	}
 
 	return RespBody, nil
