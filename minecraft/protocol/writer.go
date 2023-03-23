@@ -262,6 +262,8 @@ func (w *Writer) ItemDescriptorCount(i *ItemDescriptorCount) {
 		id = ItemDescriptorItemTag
 	case *DeferredItemDescriptor:
 		id = ItemDescriptorDeferred
+	case *ComplexAliasItemDescriptor:
+		id = ItemDescriptorComplexAlias
 	default:
 		w.UnknownEnumOption(fmt.Sprintf("%T", i.Descriptor), "item descriptor type")
 		return

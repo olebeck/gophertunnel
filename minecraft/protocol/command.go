@@ -1,11 +1,8 @@
 package protocol
 
 import (
-	"math"
-
-	"math"
-
 	"github.com/google/uuid"
+	"math"
 )
 
 // AvailableCommandsContext holds the context required to encode/decode a
