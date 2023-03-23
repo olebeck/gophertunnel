@@ -20,16 +20,8 @@ func (*SubChunkRequest) ID() uint32 {
 	return IDSubChunkRequest
 }
 
-// Marshal ...
-func (pk *SubChunkRequest) Marshal(w *protocol.Writer) {
-	w.Varint32(&pk.Dimension)
-	w.SubChunkPos(&pk.Position)
-	protocol.SliceUint32Length(w, &pk.Offsets)
-}
-
-// Unmarshal ...
-func (pk *SubChunkRequest) Unmarshal(r *protocol.Reader) {
-	r.Varint32(&pk.Dimension)
-	r.SubChunkPos(&pk.Position)
-	protocol.SliceUint32Length(r, &pk.Offsets)
+func (pk *SubChunkRequest) Marshal(io protocol.IO) {
+	io.Varint32(&pk.Dimension)
+	io.SubChunkPos(&pk.Position)
+	protocol.SliceUint32Length(io, &pk.Offsets)
 }

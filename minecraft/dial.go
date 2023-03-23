@@ -220,7 +220,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 	l, c := make(chan struct{}), make(chan struct{})
 	go listenConn(conn, d.ErrorLog, l, c)
 
-	conn.expect(packet.IDNetworkSettings)
+	conn.expect(packet.IDNetworkSettings, packet.IDPlayStatus)
 	if err := conn.WritePacket(&packet.RequestNetworkSettings{ClientProtocol: d.Protocol.ID()}); err != nil {
 		return conn, err
 	}

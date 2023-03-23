@@ -26,16 +26,8 @@ func (*LessonProgress) ID() uint32 {
 	return IDLessonProgress
 }
 
-// Marshal ...
-func (pk *LessonProgress) Marshal(w *protocol.Writer) {
-	w.Uint8(&pk.Action)
-	w.Varint32(&pk.Score)
-	w.String(&pk.Identifier)
-}
-
-// Unmarshal ...
-func (pk *LessonProgress) Unmarshal(r *protocol.Reader) {
-	r.Uint8(&pk.Action)
-	r.Varint32(&pk.Score)
-	r.String(&pk.Identifier)
+func (pk *LessonProgress) Marshal(io protocol.IO) {
+	io.Uint8(&pk.Action)
+	io.Varint32(&pk.Score)
+	io.String(&pk.Identifier)
 }

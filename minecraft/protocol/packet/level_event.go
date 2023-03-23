@@ -5,7 +5,7 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 )
 
-//noinspection SpellCheckingInspection
+// noinspection SpellCheckingInspection
 const (
 	LevelEventSoundClick                   = 1000
 	LevelEventSoundClickFail               = 1001
@@ -136,16 +136,8 @@ func (*LevelEvent) ID() uint32 {
 	return IDLevelEvent
 }
 
-// Marshal ...
-func (pk *LevelEvent) Marshal(w *protocol.Writer) {
-	w.Varint32(&pk.EventType)
-	w.Vec3(&pk.Position)
-	w.Varint32(&pk.EventData)
-}
-
-// Unmarshal ...
-func (pk *LevelEvent) Unmarshal(r *protocol.Reader) {
-	r.Varint32(&pk.EventType)
-	r.Vec3(&pk.Position)
-	r.Varint32(&pk.EventData)
+func (pk *LevelEvent) Marshal(io protocol.IO) {
+	io.Varint32(&pk.EventType)
+	io.Vec3(&pk.Position)
+	io.Varint32(&pk.EventData)
 }

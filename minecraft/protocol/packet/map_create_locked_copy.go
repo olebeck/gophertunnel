@@ -20,14 +20,7 @@ func (*MapCreateLockedCopy) ID() uint32 {
 	return IDMapCreateLockedCopy
 }
 
-// Marshal ...
-func (pk *MapCreateLockedCopy) Marshal(w *protocol.Writer) {
-	w.Varint64(&pk.OriginalMapID)
-	w.Varint64(&pk.NewMapID)
-}
-
-// Unmarshal ...
-func (pk *MapCreateLockedCopy) Unmarshal(r *protocol.Reader) {
-	r.Varint64(&pk.OriginalMapID)
-	r.Varint64(&pk.NewMapID)
+func (pk *MapCreateLockedCopy) Marshal(io protocol.IO) {
+	io.Varint64(&pk.OriginalMapID)
+	io.Varint64(&pk.NewMapID)
 }

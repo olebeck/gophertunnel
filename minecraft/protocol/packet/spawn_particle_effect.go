@@ -33,20 +33,10 @@ func (*SpawnParticleEffect) ID() uint32 {
 	return IDSpawnParticleEffect
 }
 
-// Marshal ...
-func (pk *SpawnParticleEffect) Marshal(w *protocol.Writer) {
-	w.Uint8(&pk.Dimension)
-	w.Varint64(&pk.EntityUniqueID)
-	w.Vec3(&pk.Position)
-	w.String(&pk.ParticleName)
-	protocol.OptionalFunc(w, &pk.MoLangVariables, w.ByteSlice)
-}
-
-// Unmarshal ...
-func (pk *SpawnParticleEffect) Unmarshal(r *protocol.Reader) {
-	r.Uint8(&pk.Dimension)
-	r.Varint64(&pk.EntityUniqueID)
-	r.Vec3(&pk.Position)
-	r.String(&pk.ParticleName)
-	protocol.OptionalFunc(r, &pk.MoLangVariables, r.ByteSlice)
+func (pk *SpawnParticleEffect) Marshal(io protocol.IO) {
+	io.Uint8(&pk.Dimension)
+	io.Varint64(&pk.EntityUniqueID)
+	io.Vec3(&pk.Position)
+	io.String(&pk.ParticleName)
+	protocol.OptionalFunc(io, &pk.MoLangVariables, io.ByteSlice)
 }

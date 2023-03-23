@@ -28,38 +28,19 @@ func (*PlayerList) ID() uint32 {
 	return IDPlayerList
 }
 
-// Marshal ...
-func (pk *PlayerList) Marshal(w *protocol.Writer) {
-	w.Uint8(&pk.ActionType)
+func (pk *PlayerList) Marshal(io protocol.IO) {
+	io.Uint8(&pk.ActionType)
 	switch pk.ActionType {
 	case PlayerListActionAdd:
-		protocol.Slice(w, &pk.Entries)
+		protocol.Slice(io, &pk.Entries)
 	case PlayerListActionRemove:
-		protocol.FuncIOSlice(w, &pk.Entries, protocol.PlayerListRemoveEntry)
+		protocol.FuncIOSlice(io, &pk.Entries, protocol.PlayerListRemoveEntry)
 	default:
-		w.UnknownEnumOption(pk.ActionType, "player list action type")
+		io.UnknownEnumOption(pk.ActionType, "player list action type")
 	}
 	if pk.ActionType == PlayerListActionAdd {
 		for i := 0; i < len(pk.Entries); i++ {
-			w.Bool(&pk.Entries[i].Skin.Trusted)
-		}
-	}
-}
-
-// Unmarshal ...
-func (pk *PlayerList) Unmarshal(r *protocol.Reader) {
-	r.Uint8(&pk.ActionType)
-	switch pk.ActionType {
-	case PlayerListActionAdd:
-		protocol.Slice(r, &pk.Entries)
-	case PlayerListActionRemove:
-		protocol.FuncIOSlice(r, &pk.Entries, protocol.PlayerListRemoveEntry)
-	default:
-		r.UnknownEnumOption(pk.ActionType, "player list action type")
-	}
-	if pk.ActionType == PlayerListActionAdd {
-		for i := 0; i < len(pk.Entries); i++ {
-			r.Bool(&pk.Entries[i].Skin.Trusted)
+			io.Bool(&pk.Entries[i].Skin.Trusted)
 		}
 	}
 }

@@ -17,12 +17,6 @@ func (*PurchaseReceipt) ID() uint32 {
 	return IDPurchaseReceipt
 }
 
-// Marshal ...
-func (pk *PurchaseReceipt) Marshal(w *protocol.Writer) {
-	protocol.FuncSlice(w, &pk.Receipts, w.String)
-}
-
-// Unmarshal ...
-func (pk *PurchaseReceipt) Unmarshal(r *protocol.Reader) {
-	protocol.FuncSlice(r, &pk.Receipts, r.String)
+func (pk *PurchaseReceipt) Marshal(io protocol.IO) {
+	protocol.FuncSlice(io, &pk.Receipts, io.String)
 }

@@ -25,18 +25,11 @@ type UpdateClientInputLocks struct {
 }
 
 // ID ...
-func (u UpdateClientInputLocks) ID() uint32 {
+func (pk *UpdateClientInputLocks) ID() uint32 {
 	return IDUpdateClientInputLocks
 }
 
-// Marshal ...
-func (u UpdateClientInputLocks) Marshal(w *protocol.Writer) {
-	w.Varuint32(&u.Locks)
-	w.Vec3(&u.Position)
-}
-
-// Unmarshal ...
-func (u UpdateClientInputLocks) Unmarshal(r *protocol.Reader) {
-	r.Varuint32(&u.Locks)
-	r.Vec3(&u.Position)
+func (pk *UpdateClientInputLocks) Marshal(io protocol.IO) {
+	io.Varuint32(&pk.Locks)
+	io.Vec3(&pk.Position)
 }

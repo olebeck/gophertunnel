@@ -36,36 +36,15 @@ func (*EducationSettings) ID() uint32 {
 	return IDEducationSettings
 }
 
-// Marshal ...
-func (pk *EducationSettings) Marshal(w *protocol.Writer) {
-	w.String(&pk.CodeBuilderDefaultURI)
-	w.String(&pk.CodeBuilderTitle)
-	w.Bool(&pk.CanResizeCodeBuilder)
-	w.Bool(&pk.DisableLegacyTitleBar)
-	w.String(&pk.PostProcessFilter)
-	w.String(&pk.ScreenshotBorderPath)
-
-	protocol.OptionalFunc(w, &pk.CanModifyBlocks, w.Bool)
-	protocol.OptionalFunc(w, &pk.OverrideURI, w.String)
-
-	w.Bool(&pk.HasQuiz)
-
-	protocol.OptionalMarshaler(w, &pk.ExternalLinkSettings)
-}
-
-// Unmarshal ...
-func (pk *EducationSettings) Unmarshal(r *protocol.Reader) {
-	r.String(&pk.CodeBuilderDefaultURI)
-	r.String(&pk.CodeBuilderTitle)
-	r.Bool(&pk.CanResizeCodeBuilder)
-	r.Bool(&pk.DisableLegacyTitleBar)
-	r.String(&pk.PostProcessFilter)
-	r.String(&pk.ScreenshotBorderPath)
-
-	protocol.OptionalFunc(r, &pk.CanModifyBlocks, r.Bool)
-	protocol.OptionalFunc(r, &pk.OverrideURI, r.String)
-
-	r.Bool(&pk.HasQuiz)
-
-	protocol.OptionalMarshaler(r, &pk.ExternalLinkSettings)
+func (pk *EducationSettings) Marshal(io protocol.IO) {
+	io.String(&pk.CodeBuilderDefaultURI)
+	io.String(&pk.CodeBuilderTitle)
+	io.Bool(&pk.CanResizeCodeBuilder)
+	io.Bool(&pk.DisableLegacyTitleBar)
+	io.String(&pk.PostProcessFilter)
+	io.String(&pk.ScreenshotBorderPath)
+	protocol.OptionalFunc(io, &pk.CanModifyBlocks, io.Bool)
+	protocol.OptionalFunc(io, &pk.OverrideURI, io.String)
+	io.Bool(&pk.HasQuiz)
+	protocol.OptionalMarshaler(io, &pk.ExternalLinkSettings)
 }

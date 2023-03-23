@@ -21,14 +21,7 @@ func (*ScriptCustomEvent) ID() uint32 {
 	return IDScriptCustomEvent
 }
 
-// Marshal ...
-func (pk *ScriptCustomEvent) Marshal(w *protocol.Writer) {
-	w.String(&pk.EventName)
-	w.ByteSlice(&pk.EventData)
-}
-
-// Unmarshal ...
-func (pk *ScriptCustomEvent) Unmarshal(r *protocol.Reader) {
-	r.String(&pk.EventName)
-	r.ByteSlice(&pk.EventData)
+func (pk *ScriptCustomEvent) Marshal(io protocol.IO) {
+	io.String(&pk.EventName)
+	io.ByteSlice(&pk.EventData)
 }

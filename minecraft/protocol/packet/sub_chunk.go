@@ -21,26 +21,13 @@ func (*SubChunk) ID() uint32 {
 	return IDSubChunk
 }
 
-// Marshal ...
-func (pk *SubChunk) Marshal(w *protocol.Writer) {
-	w.Bool(&pk.CacheEnabled)
-	w.Varint32(&pk.Dimension)
-	w.SubChunkPos(&pk.Position)
+func (pk *SubChunk) Marshal(io protocol.IO) {
+	io.Bool(&pk.CacheEnabled)
+	io.Varint32(&pk.Dimension)
+	io.SubChunkPos(&pk.Position)
 	if pk.CacheEnabled {
-		protocol.SliceUint32Length(w, &pk.SubChunkEntries)
+		protocol.SliceUint32Length(io, &pk.SubChunkEntries)
 	} else {
-		protocol.FuncIOSliceUint32Length(w, &pk.SubChunkEntries, protocol.SubChunkEntryNoCache)
-	}
-}
-
-// Unmarshal ...
-func (pk *SubChunk) Unmarshal(r *protocol.Reader) {
-	r.Bool(&pk.CacheEnabled)
-	r.Varint32(&pk.Dimension)
-	r.SubChunkPos(&pk.Position)
-	if pk.CacheEnabled {
-		protocol.SliceUint32Length(r, &pk.SubChunkEntries)
-	} else {
-		protocol.FuncIOSliceUint32Length(r, &pk.SubChunkEntries, protocol.SubChunkEntryNoCache)
+		protocol.FuncIOSliceUint32Length(io, &pk.SubChunkEntries, protocol.SubChunkEntryNoCache)
 	}
 }

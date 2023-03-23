@@ -33,16 +33,8 @@ func (*UpdateSoftEnum) ID() uint32 {
 	return IDUpdateSoftEnum
 }
 
-// Marshal ...
-func (pk *UpdateSoftEnum) Marshal(w *protocol.Writer) {
-	w.String(&pk.EnumType)
-	protocol.FuncSlice(w, &pk.Options, w.String)
-	w.Uint8(&pk.ActionType)
-}
-
-// Unmarshal ...
-func (pk *UpdateSoftEnum) Unmarshal(r *protocol.Reader) {
-	r.String(&pk.EnumType)
-	protocol.FuncSlice(r, &pk.Options, r.String)
-	r.Uint8(&pk.ActionType)
+func (pk *UpdateSoftEnum) Marshal(io protocol.IO) {
+	io.String(&pk.EnumType)
+	protocol.FuncSlice(io, &pk.Options, io.String)
+	io.Uint8(&pk.ActionType)
 }

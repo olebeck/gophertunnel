@@ -19,12 +19,6 @@ func (*CreativeContent) ID() uint32 {
 	return IDCreativeContent
 }
 
-// Marshal ...
-func (pk *CreativeContent) Marshal(w *protocol.Writer) {
-	protocol.Slice(w, &pk.Items)
-}
-
-// Unmarshal ...
-func (pk *CreativeContent) Unmarshal(r *protocol.Reader) {
-	protocol.Slice(r, &pk.Items)
+func (pk *CreativeContent) Marshal(io protocol.IO) {
+	protocol.Slice(io, &pk.Items)
 }

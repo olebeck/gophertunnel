@@ -35,6 +35,7 @@ type IO interface {
 	UBlockPos(x *BlockPos)
 	ChunkPos(x *ChunkPos)
 	SubChunkPos(x *SubChunkPos)
+	SoundPos(x *mgl32.Vec3)
 	ByteFloat(x *float32)
 	Bytes(p *[]byte)
 	NBT(m *map[string]any, encoding nbt.Encoding)
@@ -46,8 +47,15 @@ type IO interface {
 	Item(x *ItemStack)
 	ItemInstance(i *ItemInstance)
 	ItemDescriptorCount(i *ItemDescriptorCount)
+	StackRequestAction(x *StackRequestAction)
 	MaterialReducer(x *MaterialReducer)
+	Recipe(x *Recipe)
+	EventType(x *Event)
+	TransactionDataType(x *InventoryTransactionData)
+	PlayerInventoryAction(x *UseItemTransactionData)
 	GameRule(x *GameRule)
+	AbilityValue(x *any)
+	Commands(commands *[]Command, constraints *[]CommandEnumConstraint)
 
 	ShieldID() int32
 	UnknownEnumOption(value any, enum string)

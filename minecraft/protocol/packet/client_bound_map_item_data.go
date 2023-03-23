@@ -75,56 +75,28 @@ func (*ClientBoundMapItemData) ID() uint32 {
 	return IDClientBoundMapItemData
 }
 
-// Marshal ...
-func (pk *ClientBoundMapItemData) Marshal(w *protocol.Writer) {
-	w.Varint64(&pk.MapID)
-	w.Varuint32(&pk.UpdateFlags)
-	w.Uint8(&pk.Dimension)
-	w.Bool(&pk.LockedMap)
-	w.BlockPos(&pk.Origin)
+func (pk *ClientBoundMapItemData) Marshal(io protocol.IO) {
+	io.Varint64(&pk.MapID)
+	io.Varuint32(&pk.UpdateFlags)
+	io.Uint8(&pk.Dimension)
+	io.Bool(&pk.LockedMap)
+	io.BlockPos(&pk.Origin)
 
 	if pk.UpdateFlags&MapUpdateFlagInitialisation != 0 {
-		protocol.FuncSlice(w, &pk.MapsIncludedIn, w.Varint64)
+		protocol.FuncSlice(io, &pk.MapsIncludedIn, io.Varint64)
 	}
 	if pk.UpdateFlags&(MapUpdateFlagInitialisation|MapUpdateFlagDecoration|MapUpdateFlagTexture) != 0 {
-		w.Uint8(&pk.Scale)
+		io.Uint8(&pk.Scale)
 	}
 	if pk.UpdateFlags&MapUpdateFlagDecoration != 0 {
-		protocol.Slice(w, &pk.TrackedObjects)
-		protocol.Slice(w, &pk.Decorations)
+		protocol.Slice(io, &pk.TrackedObjects)
+		protocol.Slice(io, &pk.Decorations)
 	}
 	if pk.UpdateFlags&MapUpdateFlagTexture != 0 {
-		w.Varint32(&pk.Width)
-		w.Varint32(&pk.Height)
-		w.Varint32(&pk.XOffset)
-		w.Varint32(&pk.YOffset)
-		protocol.FuncSlice(w, &pk.Pixels, w.VarRGBA)
-	}
-}
-
-// Unmarshal ...
-func (pk *ClientBoundMapItemData) Unmarshal(r *protocol.Reader) {
-	r.Varint64(&pk.MapID)
-	r.Varuint32(&pk.UpdateFlags)
-	r.Uint8(&pk.Dimension)
-	r.Bool(&pk.LockedMap)
-	r.BlockPos(&pk.Origin)
-
-	if pk.UpdateFlags&MapUpdateFlagInitialisation != 0 {
-		protocol.FuncSlice(r, &pk.MapsIncludedIn, r.Varint64)
-	}
-	if pk.UpdateFlags&(MapUpdateFlagInitialisation|MapUpdateFlagDecoration|MapUpdateFlagTexture) != 0 {
-		r.Uint8(&pk.Scale)
-	}
-	if pk.UpdateFlags&MapUpdateFlagDecoration != 0 {
-		protocol.Slice(r, &pk.TrackedObjects)
-		protocol.Slice(r, &pk.Decorations)
-	}
-	if pk.UpdateFlags&MapUpdateFlagTexture != 0 {
-		r.Varint32(&pk.Width)
-		r.Varint32(&pk.Height)
-		r.Varint32(&pk.XOffset)
-		r.Varint32(&pk.YOffset)
-		protocol.FuncSlice(r, &pk.Pixels, r.VarRGBA)
+		io.Varint32(&pk.Width)
+		io.Varint32(&pk.Height)
+		io.Varint32(&pk.XOffset)
+		io.Varint32(&pk.YOffset)
+		protocol.FuncSlice(io, &pk.Pixels, io.VarRGBA)
 	}
 }

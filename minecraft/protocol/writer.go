@@ -120,6 +120,12 @@ func (w *Writer) SubChunkPos(x *SubChunkPos) {
 	w.Varint32(&x[2])
 }
 
+// SoundPos writes an mgl32.Vec3 that serves as a position for a sound.
+func (w *Writer) SoundPos(x *mgl32.Vec3) {
+	b := BlockPos{int32((*x)[0] * 8), int32((*x)[1] * 8), int32((*x)[2] * 8)}
+	w.BlockPos(&b)
+}
+
 // RGBA writes a color.RGBA x as a uint32 to the underlying buffer.
 func (w *Writer) RGBA(x *color.RGBA) {
 	val := uint32(x.R) | uint32(x.G)<<8 | uint32(x.B)<<16 | uint32(x.A)<<24
@@ -354,11 +360,97 @@ func (w *Writer) Item(x *ItemStack) {
 	w.ByteSlice(&extraData)
 }
 
+// StackRequestAction writes a StackRequestAction to the writer.
+func (w *Writer) StackRequestAction(x *StackRequestAction) {
+	var id byte
+	if !lookupStackRequestActionType(*x, &id) {
+		w.UnknownEnumOption(fmt.Sprintf("%T", *x), "stack request action type")
+	}
+	w.Uint8(&id)
+	(*x).Marshal(w)
+}
+
 // MaterialReducer writes a material reducer to the writer.
 func (w *Writer) MaterialReducer(m *MaterialReducer) {
 	mix := (m.InputItem.NetworkID << 16) | int32(m.InputItem.MetadataValue)
 	w.Varint32(&mix)
 	Slice(w, &m.Outputs)
+}
+
+// Recipe writes a Recipe to the writer.
+func (w *Writer) Recipe(x *Recipe) {
+	var recipeType int32
+	if !lookupRecipeType(*x, &recipeType) {
+		w.UnknownEnumOption(fmt.Sprintf("%T", *x), "crafting recipe type")
+	}
+	w.Varint32(&recipeType)
+	(*x).Marshal(w)
+}
+
+// EventType writes an Event to the writer.
+func (w *Writer) EventType(x *Event) {
+	var t int32
+	if !lookupEventType(*x, &t) {
+		w.UnknownEnumOption(fmt.Sprintf("%T", x), "event packet event type")
+	}
+	w.Varint32(&t)
+}
+
+// TransactionDataType writes an InventoryTransactionData type to the writer.
+func (w *Writer) TransactionDataType(x *InventoryTransactionData) {
+	var id uint32
+	if !lookupTransactionDataType(*x, &id) {
+		w.UnknownEnumOption(fmt.Sprintf("%T", x), "inventory transaction data type")
+	}
+	w.Varuint32(&id)
+}
+
+// AbilityValue writes an ability value to the writer.
+func (w *Writer) AbilityValue(x *any) {
+	switch val := (*x).(type) {
+	case bool:
+		valType, defaultVal := uint8(1), float32(0)
+		w.Uint8(&valType)
+		w.Bool(&val)
+		w.Float32(&defaultVal)
+	case float32:
+		valType, defaultVal := uint8(2), false
+		w.Uint8(&valType)
+		w.Bool(&defaultVal)
+		w.Float32(&val)
+	default:
+		w.InvalidValue(*x, "ability value type", "must be bool or float32")
+	}
+}
+
+// Commands writes a Command slice and its constraints to a writer.
+func (w *Writer) Commands(commands *[]Command, constraints *[]CommandEnumConstraint) {
+	values, valueIndices := enumValues(*commands)
+	suffixes, suffixIndices := suffixes(*commands)
+	enums, enumIndices := enums(*commands)
+	dynamicEnums, dynamicEnumIndices := dynamicEnums(*commands)
+
+	ctx := AvailableCommandsContext{
+		EnumIndices:        enumIndices,
+		EnumValueIndices:   valueIndices,
+		SuffixIndices:      suffixIndices,
+		DynamicEnumIndices: dynamicEnumIndices,
+	}
+
+	// Start by writing all enum values and suffixes to the buffer.
+	FuncSlice(w, &values, w.String)
+	FuncSlice(w, &suffixes, w.String)
+
+	// After that all actual enums, which point to enum values rather than directly writing strings.
+	FuncIOSlice(w, &enums, ctx.WriteEnum)
+
+	// Finally we write the command data which includes all usages of the commands.
+	FuncIOSlice(w, commands, ctx.WriteCommandData)
+
+	// Soft enums follow, which may be changed after sending this packet.
+	Slice(w, &dynamicEnums)
+
+	FuncIOSlice(w, constraints, ctx.WriteEnumConstraint)
 }
 
 // Varint64 writes an int64 as 1-10 bytes to the underlying buffer.

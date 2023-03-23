@@ -15,12 +15,6 @@ func (*ClientCheatAbility) ID() uint32 {
 	return IDClientCheatAbility
 }
 
-// Marshal ...
-func (pk *ClientCheatAbility) Marshal(w *protocol.Writer) {
-	protocol.Single(w, &pk.AbilityData)
-}
-
-// Unmarshal ...
-func (pk *ClientCheatAbility) Unmarshal(r *protocol.Reader) {
-	protocol.Single(r, &pk.AbilityData)
+func (pk *ClientCheatAbility) Marshal(io protocol.IO) {
+	protocol.Single(io, &pk.AbilityData)
 }

@@ -26,18 +26,9 @@ func (*SetActorData) ID() uint32 {
 	return IDSetActorData
 }
 
-// Marshal ...
-func (pk *SetActorData) Marshal(w *protocol.Writer) {
-	w.Varuint64(&pk.EntityRuntimeID)
-	w.EntityMetadata(&pk.EntityMetadata)
-	protocol.Single(w, &pk.EntityProperties)
-	w.Varuint64(&pk.Tick)
-}
-
-// Unmarshal ...
-func (pk *SetActorData) Unmarshal(r *protocol.Reader) {
-	r.Varuint64(&pk.EntityRuntimeID)
-	r.EntityMetadata(&pk.EntityMetadata)
-	protocol.Single(r, &pk.EntityProperties)
-	r.Varuint64(&pk.Tick)
+func (pk *SetActorData) Marshal(io protocol.IO) {
+	io.Varuint64(&pk.EntityRuntimeID)
+	io.EntityMetadata(&pk.EntityMetadata)
+	protocol.Single(io, &pk.EntityProperties)
+	io.Varuint64(&pk.Tick)
 }

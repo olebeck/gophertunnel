@@ -16,12 +16,6 @@ func (*UpdateAbilities) ID() uint32 {
 	return IDUpdateAbilities
 }
 
-// Marshal ...
-func (pk *UpdateAbilities) Marshal(w *protocol.Writer) {
-	protocol.Single(w, &pk.AbilityData)
-}
-
-// Unmarshal ...
-func (pk *UpdateAbilities) Unmarshal(r *protocol.Reader) {
-	protocol.Single(r, &pk.AbilityData)
+func (pk *UpdateAbilities) Marshal(io protocol.IO) {
+	protocol.Single(io, &pk.AbilityData)
 }

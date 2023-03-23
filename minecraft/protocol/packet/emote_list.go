@@ -23,14 +23,7 @@ func (*EmoteList) ID() uint32 {
 	return IDEmoteList
 }
 
-// Marshal ...
-func (pk *EmoteList) Marshal(w *protocol.Writer) {
-	w.Varuint64(&pk.PlayerRuntimeID)
-	protocol.FuncSlice(w, &pk.EmotePieces, w.UUID)
-}
-
-// Unmarshal ...
-func (pk *EmoteList) Unmarshal(r *protocol.Reader) {
-	r.Varuint64(&pk.PlayerRuntimeID)
-	protocol.FuncSlice(r, &pk.EmotePieces, r.UUID)
+func (pk *EmoteList) Marshal(io protocol.IO) {
+	io.Varuint64(&pk.PlayerRuntimeID)
+	protocol.FuncSlice(io, &pk.EmotePieces, io.UUID)
 }

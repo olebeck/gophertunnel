@@ -27,16 +27,8 @@ func (*Emote) ID() uint32 {
 	return IDEmote
 }
 
-// Marshal ...
-func (pk *Emote) Marshal(w *protocol.Writer) {
-	w.Varuint64(&pk.EntityRuntimeID)
-	w.String(&pk.EmoteID)
-	w.Uint8(&pk.Flags)
-}
-
-// Unmarshal ...
-func (pk *Emote) Unmarshal(r *protocol.Reader) {
-	r.Varuint64(&pk.EntityRuntimeID)
-	r.String(&pk.EmoteID)
-	r.Uint8(&pk.Flags)
+func (pk *Emote) Marshal(io protocol.IO) {
+	io.Varuint64(&pk.EntityRuntimeID)
+	io.String(&pk.EmoteID)
+	io.Uint8(&pk.Flags)
 }

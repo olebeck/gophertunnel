@@ -120,62 +120,33 @@ func (pk *PlayerAuthInput) ID() uint32 {
 	return IDPlayerAuthInput
 }
 
-// Marshal ...
-func (pk *PlayerAuthInput) Marshal(w *protocol.Writer) {
-	w.Float32(&pk.Pitch)
-	w.Float32(&pk.Yaw)
-	w.Vec3(&pk.Position)
-	w.Vec2(&pk.MoveVector)
-	w.Float32(&pk.HeadYaw)
-	w.Varuint64(&pk.InputData)
-	w.Varuint32(&pk.InputMode)
-	w.Varuint32(&pk.PlayMode)
-	w.Varint32(&pk.InteractionModel)
+func (pk *PlayerAuthInput) Marshal(io protocol.IO) {
+	io.Float32(&pk.Pitch)
+	io.Float32(&pk.Yaw)
+	io.Vec3(&pk.Position)
+	io.Vec2(&pk.MoveVector)
+	io.Float32(&pk.HeadYaw)
+	io.Varuint64(&pk.InputData)
+	io.Varuint32(&pk.InputMode)
+	io.Varuint32(&pk.PlayMode)
+	io.Varint32(&pk.InteractionModel)
 	if pk.PlayMode == PlayModeReality {
-		w.Vec3(&pk.GazeDirection)
+		io.Vec3(&pk.GazeDirection)
 	}
-	w.Varuint64(&pk.Tick)
-	w.Vec3(&pk.Delta)
+	io.Varuint64(&pk.Tick)
+	io.Vec3(&pk.Delta)
 
 	if pk.InputData&InputFlagPerformItemInteraction != 0 {
-		w.PlayerInventoryAction(&pk.ItemInteractionData)
+		io.PlayerInventoryAction(&pk.ItemInteractionData)
 	}
 
 	if pk.InputData&InputFlagPerformItemStackRequest != 0 {
-		protocol.WriteStackRequest(w, &pk.ItemStackRequest)
+		protocol.Single(io, &pk.ItemStackRequest)
 	}
 
 	if pk.InputData&InputFlagPerformBlockActions != 0 {
-		protocol.SliceVarint32Length(w, &pk.BlockActions)
-	}
-}
-
-// Unmarshal ...
-func (pk *PlayerAuthInput) Unmarshal(r *protocol.Reader) {
-	r.Float32(&pk.Pitch)
-	r.Float32(&pk.Yaw)
-	r.Vec3(&pk.Position)
-	r.Vec2(&pk.MoveVector)
-	r.Float32(&pk.HeadYaw)
-	r.Varuint64(&pk.InputData)
-	r.Varuint32(&pk.InputMode)
-	r.Varuint32(&pk.PlayMode)
-	r.Varint32(&pk.InteractionModel)
-	if pk.PlayMode == PlayModeReality {
-		r.Vec3(&pk.GazeDirection)
-	}
-	r.Varuint64(&pk.Tick)
-	r.Vec3(&pk.Delta)
-
-	if pk.InputData&InputFlagPerformItemInteraction != 0 {
-		r.PlayerInventoryAction(&pk.ItemInteractionData)
+		protocol.SliceVarint32Length(io, &pk.BlockActions)
 	}
 
-	if pk.InputData&InputFlagPerformItemStackRequest != 0 {
-		protocol.StackRequest(r, &pk.ItemStackRequest)
-	}
-
-	if pk.InputData&InputFlagPerformBlockActions != 0 {
-		protocol.SliceVarint32Length(r, &pk.BlockActions)
-	}
+	io.Vec2(&pk.AnalogueMoveVector)
 }

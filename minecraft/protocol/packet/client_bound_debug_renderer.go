@@ -35,32 +35,15 @@ func (*ClientBoundDebugRenderer) ID() uint32 {
 	return IDClientBoundDebugRenderer
 }
 
-// Marshal ...
-func (pk *ClientBoundDebugRenderer) Marshal(w *protocol.Writer) {
-	w.Int32(&pk.Type)
-
+func (pk *ClientBoundDebugRenderer) Marshal(io protocol.IO) {
+	io.Int32(&pk.Type)
 	if pk.Type == ClientBoundDebugRendererAddCube {
-		w.String(&pk.Text)
-		w.Vec3(&pk.Position)
-		w.Float32(&pk.Red)
-		w.Float32(&pk.Green)
-		w.Float32(&pk.Blue)
-		w.Float32(&pk.Alpha)
-		w.Int64(&pk.Duration)
-	}
-}
-
-// Unmarshal ...
-func (pk *ClientBoundDebugRenderer) Unmarshal(r *protocol.Reader) {
-	r.Int32(&pk.Type)
-
-	if pk.Type == ClientBoundDebugRendererAddCube {
-		r.String(&pk.Text)
-		r.Vec3(&pk.Position)
-		r.Float32(&pk.Red)
-		r.Float32(&pk.Green)
-		r.Float32(&pk.Blue)
-		r.Float32(&pk.Alpha)
-		r.Int64(&pk.Duration)
+		io.String(&pk.Text)
+		io.Vec3(&pk.Position)
+		io.Float32(&pk.Red)
+		io.Float32(&pk.Green)
+		io.Float32(&pk.Blue)
+		io.Float32(&pk.Alpha)
+		io.Int64(&pk.Duration)
 	}
 }

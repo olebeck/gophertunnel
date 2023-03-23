@@ -27,23 +27,9 @@ func (*PlaySound) ID() uint32 {
 	return IDPlaySound
 }
 
-// Marshal ...
-func (pk *PlaySound) Marshal(w *protocol.Writer) {
-	b := protocol.BlockPos{int32(pk.Position[0] * 8), int32(pk.Position[1] * 8), int32(pk.Position[2] * 8)}
-
-	w.String(&pk.SoundName)
-	w.BlockPos(&b)
-	w.Float32(&pk.Volume)
-	w.Float32(&pk.Pitch)
-}
-
-// Unmarshal ...
-func (pk *PlaySound) Unmarshal(r *protocol.Reader) {
-	var b protocol.BlockPos
-	r.String(&pk.SoundName)
-	r.BlockPos(&b)
-	r.Float32(&pk.Volume)
-	r.Float32(&pk.Pitch)
-
-	pk.Position = mgl32.Vec3{float32(b[0]) / 8, float32(b[1]) / 8, float32(b[2]) / 8}
+func (pk *PlaySound) Marshal(io protocol.IO) {
+	io.String(&pk.SoundName)
+	io.SoundPos(&pk.Position)
+	io.Float32(&pk.Volume)
+	io.Float32(&pk.Pitch)
 }

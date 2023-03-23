@@ -18,12 +18,6 @@ func (*SetActorLink) ID() uint32 {
 	return IDSetActorLink
 }
 
-// Marshal ...
-func (pk *SetActorLink) Marshal(w *protocol.Writer) {
-	protocol.Single(w, &pk.EntityLink)
-}
-
-// Unmarshal ...
-func (pk *SetActorLink) Unmarshal(r *protocol.Reader) {
-	protocol.Single(r, &pk.EntityLink)
+func (pk *SetActorLink) Marshal(io protocol.IO) {
+	protocol.Single(io, &pk.EntityLink)
 }

@@ -18,14 +18,7 @@ func (*DeathInfo) ID() uint32 {
 	return IDDeathInfo
 }
 
-// Marshal ...
-func (pk *DeathInfo) Marshal(w *protocol.Writer) {
-	w.String(&pk.Cause)
-	protocol.FuncSlice(w, &pk.Messages, w.String)
-}
-
-// Unmarshal ...
-func (pk *DeathInfo) Unmarshal(r *protocol.Reader) {
-	r.String(&pk.Cause)
-	protocol.FuncSlice(r, &pk.Messages, r.String)
+func (pk *DeathInfo) Marshal(io protocol.IO) {
+	io.String(&pk.Cause)
+	protocol.FuncSlice(io, &pk.Messages, io.String)
 }
