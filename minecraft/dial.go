@@ -138,9 +138,11 @@ func (d Dialer) DialTimeout(network, address string, timeout time.Duration) (*Co
 // CreateChain creates a chain for minecraft connection
 func CreateChain(ctx context.Context, src oauth2.TokenSource) (key *ecdsa.PrivateKey, chainData string, err error) {
 	key, _ = ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-	chainData, err = authChain(ctx, src, key)
-	if err != nil {
-		return nil, "", &net.OpError{Op: "dial", Net: "minecraft", Err: err}
+	if src != nil {
+		chainData, err = authChain(ctx, src, key)
+		if err != nil {
+			return nil, "", &net.OpError{Op: "dial", Net: "minecraft", Err: err}
+		}
 	}
 	return key, chainData, nil
 }
@@ -149,13 +151,6 @@ func CreateChain(ctx context.Context, src oauth2.TokenSource) (key *ecdsa.Privat
 // typically "raknet". A Conn is returned which may be used to receive packets from and send packets to.
 // If a connection is not established before the context passed is cancelled, DialContext returns an error.
 func (d Dialer) DialContext(ctx context.Context, network, address string) (conn *Conn, err error) {
-	if d.Key == nil || d.ChainData == "" {
-		d.Key, d.ChainData, err = CreateChain(ctx, d.TokenSource)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	if d.ErrorLog == nil {
 		d.ErrorLog = log.New(os.Stderr, "", log.LstdFlags)
 	}
@@ -180,6 +175,13 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	if d.Key == nil || d.ChainData == "" {
+		d.Key, d.ChainData, err = CreateChain(ctx, d.TokenSource)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	conn = newConn(netConn, d.Key, d.ErrorLog, d.Protocol, d.FlushRate)

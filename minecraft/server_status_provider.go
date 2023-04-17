@@ -1,11 +1,12 @@
 package minecraft
 
 import (
-	"github.com/sandertv/go-raknet"
 	"net"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/sandertv/go-raknet"
 )
 
 // ServerStatusProvider represents a type that is able to provide the visual status of a server, in specific
@@ -27,6 +28,8 @@ type ServerStatusProvider interface {
 type ServerStatus struct {
 	// ServerName is the name or MOTD of the server, as shown in the server list.
 	ServerName string
+	// ServerBrand is the name displayed as the software running, shown below the server name.
+	ServerBrand string
 	// PlayerCount is the current amount of players displayed in the list.
 	PlayerCount int
 	// MaxPlayers is the maximum amount of players in the server. If set to 0, MaxPlayers is set to
@@ -38,7 +41,8 @@ type ServerStatus struct {
 // MOTD and displays the player count and maximum amount of players of the server.
 type ListenerStatusProvider struct {
 	// name is the name of the server, or the MOTD, that is displayed in the server list.
-	name string
+	name  string
+	Brand string
 }
 
 // NewStatusProvider creates a ListenerStatusProvider that displays the server name passed.
@@ -50,6 +54,7 @@ func NewStatusProvider(serverName string) ListenerStatusProvider {
 func (l ListenerStatusProvider) ServerStatus(playerCount, maxPlayers int) ServerStatus {
 	return ServerStatus{
 		ServerName:  l.name,
+		ServerBrand: l.Brand,
 		PlayerCount: playerCount,
 		MaxPlayers:  maxPlayers,
 	}
@@ -117,7 +122,7 @@ func (f *ForeignStatusProvider) update() {
 // parsePongData parses the unconnected pong data passed into the relevant fields of a ServerStatus struct.
 func parsePongData(pong []byte) ServerStatus {
 	frag := splitPong(string(pong))
-	if len(frag) < 7 {
+	if len(frag) < 8 {
 		return ServerStatus{
 			ServerName: "Invalid pong data",
 		}
@@ -135,8 +140,12 @@ func parsePongData(pong []byte) ServerStatus {
 			ServerName: "Invalid max player count",
 		}
 	}
+
+	serverBrand := frag[7]
+
 	return ServerStatus{
 		ServerName:  serverName,
+		ServerBrand: serverBrand,
 		PlayerCount: online,
 		MaxPlayers:  max,
 	}

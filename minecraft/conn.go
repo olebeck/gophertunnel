@@ -45,6 +45,40 @@ var exemptedPacks = []exemptedResourcePack{
 	},
 }
 
+type IConn interface {
+	Authenticated() bool
+	ChunkRadius() int
+	ClientCacheEnabled() bool
+	ClientData() login.ClientData
+	Close() error
+	DoSpawn() error
+	DoSpawnContext(ctx context.Context) error
+	DoSpawnTimeout(timeout time.Duration) error
+	Flush() error
+	GameData() GameData
+	IdentityData() login.IdentityData
+	Latency() time.Duration
+	LocalAddr() net.Addr
+	Read(b []byte) (n int, err error)
+	ReadPacket() (pk packet.Packet, err error)
+	RemoteAddr() net.Addr
+	ResourcePacks() []*resource.Pack
+	SetDeadline(t time.Time) error
+	SetGameData(data GameData)
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(time.Time) error
+	StartGame(data GameData) error
+	StartGameContext(ctx context.Context, data GameData) error
+	StartGameTimeout(data GameData, timeout time.Duration) error
+	Write(b []byte) (n int, err error)
+	WritePacket(pk packet.Packet) error
+
+	Pool() packet.Pool
+	ShieldID() int32
+	Proto() Protocol
+	PacketFunc(header packet.Header, payload []byte, src, dst net.Addr)
+}
+
 // Conn represents a Minecraft (Bedrock Edition) connection over a specific net.Conn transport layer. Its
 // methods (Read, Write etc.) are safe to be called from multiple goroutines simultaneously, but ReadPacket
 // must not be called on multiple goroutines simultaneously.
@@ -179,13 +213,19 @@ func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *log.Logger, proto Pro
 	return conn
 }
 
-func NewConn() *Conn {
-	return &Conn{
-		packets:    make(chan *packetData, 8),
-		additional: make(chan packet.Packet, 16),
-		hdr:        &packet.Header{},
-		pool:       packet.NewPool(),
-		proto:      proto{},
+func (conn *Conn) Pool() packet.Pool {
+	return conn.pool
+}
+func (conn *Conn) ShieldID() int32 {
+	return conn.shieldID.Load()
+}
+func (conn *Conn) Proto() Protocol {
+	return conn.proto
+}
+
+func (conn *Conn) PacketFunc(header packet.Header, payload []byte, src, dst net.Addr) {
+	if conn.packetFunc != nil {
+		conn.packetFunc(header, payload, src, dst)
 	}
 }
 
@@ -555,7 +595,7 @@ func (conn *Conn) deferPacket(pk *packetData) {
 // receive receives an incoming serialised packet from the underlying connection. If the connection is not yet
 // logged in, the packet is immediately handled.
 func (conn *Conn) receive(data []byte) error {
-	pkData, err := parseData(data, conn)
+	pkData, err := parseData(data, conn, conn.RemoteAddr(), conn.LocalAddr())
 	if err != nil {
 		return err
 	}
@@ -1098,7 +1138,7 @@ func (conn *Conn) handleResourcePackDataInfo(pk *packet.ResourcePackDataInfo) er
 	if pack.size != pk.Size {
 		// Size mismatch: The ResourcePacksInfo packet had a size for the pack that did not match with the
 		// size sent here.
-		conn.log.Printf("pack %v had a different size in the ResourcePacksInfo packet than the ResourcePackDataInfo packet\n", id)
+		conn.log.Printf("pack %v had a different size in the ResourcePacksInfo packet than the ResourcePackDataInfo packet\n", pk.UUID)
 		pack.size = pk.Size
 	}
 

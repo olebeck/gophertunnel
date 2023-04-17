@@ -5,12 +5,14 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
-	"github.com/muhammadmuzzammil1998/jsonc"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/dlclark/regexp2"
+	"github.com/muhammadmuzzammil1998/jsonc"
 )
 
 // Pack is a container of a resource pack parsed from a directory or a .zip archive (or .mcpack). It holds
@@ -30,6 +32,8 @@ type Pack struct {
 	// checksum is the SHA256 checksum of the full content of the file. It is sent to the client so that it
 	// can 'verify' the download.
 	checksum [32]byte
+
+	SubPackName string
 }
 
 // Compile compiles a resource pack found at the path passed. The resource pack must either be a zip archive
@@ -339,6 +343,21 @@ func (reader packReader) find(fileName string) (io.ReadCloser, error) {
 	return nil, fmt.Errorf("could not find '%v' in zip", fileName)
 }
 
+func FixupInvalidJson(jsonString string) (fixedJsonString string) {
+	var err error
+	jsonString, err = regexp2.MustCompile(`(?:(?:\n\r)|(?:\r\n))\t*`, regexp2.None).Replace(string(jsonString), "", 0, -1)
+	if err != nil {
+		panic(err)
+	}
+
+	re := regexp2.MustCompile(`(?<=\[[^\]]*?,\s*)0+(?=\d{1,3}\s*,[^\]]*?\])`, regexp2.None)
+	s, err := re.Replace(string(jsonString), "", 0, -1)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
 // readManifest reads the manifest from the resource pack located at the path passed. If not found in the root
 // of the resource pack, it will also attempt to find it deeper down into the archive.
 func readManifest(path string) (*Manifest, error) {
@@ -365,6 +384,8 @@ func readManifest(path string) (*Manifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error reading from manifest file: %v", err)
 	}
+	allData = []byte(FixupInvalidJson(string(allData)))
+
 	manifest := &Manifest{}
 	if err := jsonc.Unmarshal(allData, manifest); err != nil {
 		return nil, fmt.Errorf("error decoding manifest JSON: %v (data: %v)", err, string(allData))

@@ -22,12 +22,12 @@ type Protocol interface {
 	// is not identical to the most recent version of that packet.Packet must be converted to the most recent version of
 	// that packet adequately in this function. ConvertToLatest returns pk if the packet.Packet was unchanged in this
 	// version compared to the latest. Note that packets must also be converted if only their ID changes.
-	ConvertToLatest(pk packet.Packet, conn *Conn) []packet.Packet
+	ConvertToLatest(pk packet.Packet, conn IConn) []packet.Packet
 	// ConvertFromLatest converts a packet.Packet of the most recent Protocol to a slice of packet.Packets of this
 	// specific Protocol. ConvertFromLatest must be synonymous to ConvertToLatest, in that it should convert any
 	// packet.Packet to the correct one from the packet.Pool returned through a call to Packets if its payload or ID was
 	// changed in this Protocol compared to the latest one.
-	ConvertFromLatest(pk packet.Packet, conn *Conn) []packet.Packet
+	ConvertFromLatest(pk packet.Packet, conn IConn) []packet.Packet
 }
 
 // proto is the default Protocol implementation. It returns the current protocol, version and packet pool and does not
@@ -37,8 +37,8 @@ type proto struct{}
 func (proto) ID() int32                                                   { return protocol.CurrentProtocol }
 func (p proto) Ver() string                                               { return protocol.CurrentVersion }
 func (p proto) Packets() packet.Pool                                      { return packet.NewPool() }
-func (p proto) ConvertToLatest(pk packet.Packet, _ *Conn) []packet.Packet { return []packet.Packet{pk} }
-func (p proto) ConvertFromLatest(pk packet.Packet, _ *Conn) []packet.Packet {
+func (p proto) ConvertToLatest(pk packet.Packet, _ IConn) []packet.Packet { return []packet.Packet{pk} }
+func (p proto) ConvertFromLatest(pk packet.Packet, _ IConn) []packet.Packet {
 	return []packet.Packet{pk}
 }
 
