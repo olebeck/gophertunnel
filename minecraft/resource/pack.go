@@ -407,7 +407,7 @@ func readManifest(path string) (*Manifest, image.Image, error) {
 		defer iconFile.Close()
 		icon, err = png.Decode(iconFile)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error decoding pack icon: %v", err)
+			fmt.Printf("Warn: error decoding pack icon %v\n", err)
 		}
 	}
 
