@@ -41,6 +41,10 @@ func (err unknownPacketError) Error() string {
 	return fmt.Sprintf("unknown packet with ID %v", err.id)
 }
 
+func (p *packetData) Decode(conn IConn) (pks []packet.Packet, err error) {
+	return p.decode(conn)
+}
+
 // decode decodes the packet payload held in the packetData and returns the packet.Packet decoded.
 func (p *packetData) decode(conn IConn) (pks []packet.Packet, err error) {
 	defer func() {
