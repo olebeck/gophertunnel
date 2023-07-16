@@ -7,7 +7,16 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"log"
+	rand2 "math/rand"
+	"net"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
 	"log"
 	rand2 "math/rand"
 	"net"
@@ -24,6 +33,7 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 	"golang.org/x/oauth2"
+	"gopkg.in/square/go-jose.v2/jwt"
 )
 
 // Dialer allows specifying specific settings for connection to a Minecraft server.
@@ -161,6 +171,16 @@ func CreateChain(ctx context.Context, src oauth2.TokenSource) (key *ecdsa.Privat
 // typically "raknet". A Conn is returned which may be used to receive packets from and send packets to.
 // If a connection is not established before the context passed is cancelled, DialContext returns an error.
 func (d Dialer) DialContext(ctx context.Context, network, address string) (conn *Conn, err error) {
+	key, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+
+	var chainData string
+	if d.TokenSource != nil {
+		chainData, err = authChain(ctx, d.TokenSource, key)
+		if err != nil {
+			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
+		}
+		d.IdentityData = readChainIdentityData([]byte(chainData))
+	}
 	if d.ErrorLog == nil {
 		d.ErrorLog = log.New(os.Stderr, "", log.LstdFlags)
 	}
@@ -260,6 +280,30 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 			return conn, nil
 		}
 	}
+}
+
+// readChainIdentityData reads a login.IdentityData from the Mojang chain
+// obtained through authentication.
+func readChainIdentityData(chainData []byte) login.IdentityData {
+	chain := struct{ Chain []string }{}
+	if err := json.Unmarshal(chainData, &chain); err != nil {
+		panic("invalid chain data from authentication: " + err.Error())
+	}
+	data := chain.Chain[1]
+	claims := struct {
+		ExtraData login.IdentityData `json:"extraData"`
+	}{}
+	tok, err := jwt.ParseSigned(data)
+	if err != nil {
+		panic("invalid chain data from authentication: " + err.Error())
+	}
+	if err := tok.UnsafeClaimsWithoutVerification(&claims); err != nil {
+		panic("invalid chain data from authentication: " + err.Error())
+	}
+	if claims.ExtraData.Identity == "" {
+		panic("chain data contained no data")
+	}
+	return claims.ExtraData
 }
 
 // listenConn listens on the connection until it is closed on another goroutine. The channel passed will
