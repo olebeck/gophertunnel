@@ -1,15 +1,17 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/microsoft"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/microsoft"
 )
 
 // TokenSource holds an oauth2.TokenSource which uses device auth to get a code. The user authenticates using
@@ -20,21 +22,22 @@ var TokenSource oauth2.TokenSource = &tokenSource{w: os.Stdout}
 // WriterTokenSource returns a new oauth2.TokenSource which, like TokenSource, uses device auth to get a code.
 // Unlike TokenSource, WriterTokenSource allows passing an io.Writer to which information on the auth URL and
 // code are printed. WriterTokenSource automatically refreshes tokens.
-func WriterTokenSource(w io.Writer) oauth2.TokenSource {
-	return &tokenSource{w: w}
+func WriterTokenSource(ctx context.Context, w io.Writer) oauth2.TokenSource {
+	return &tokenSource{w: w, ctx: ctx}
 }
 
 // tokenSource implements the oauth2.TokenSource interface. It provides a method to get an oauth2.Token using
 // device auth through a call to RequestLiveToken.
 type tokenSource struct {
-	w io.Writer
-	t *oauth2.Token
+	w   io.Writer
+	ctx context.Context
+	t   *oauth2.Token
 }
 
 // Token attempts to return a Live Connect token using the RequestLiveToken function.
 func (src *tokenSource) Token() (*oauth2.Token, error) {
 	if src.t == nil {
-		t, err := RequestLiveTokenWriter(src.w)
+		t, err := RequestLiveTokenWriterCtx(src.ctx, src.w)
 		src.t = t
 		return t, err
 	}
@@ -66,13 +69,13 @@ func RefreshTokenSourceWriter(t *oauth2.Token, w io.Writer) oauth2.TokenSource {
 // printed to the stdout with a user code which the user must use to submit.
 // RequestLiveToken is the equivalent of RequestLiveTokenWriter(os.Stdout).
 func RequestLiveToken() (*oauth2.Token, error) {
-	return RequestLiveTokenWriter(os.Stdout)
+	return RequestLiveTokenWriterCtx(context.Background(), os.Stdout)
 }
 
 // RequestLiveTokenWriter does a login request for Microsoft Live Connect using device auth. A login URL will
 // be printed to the io.Writer passed with a user code which the user must use to submit.
 // Once fully authenticated, an oauth2 token is returned which may be used to login to XBOX Live.
-func RequestLiveTokenWriter(w io.Writer) (*oauth2.Token, error) {
+func RequestLiveTokenWriterCtx(ctx context.Context, w io.Writer) (*oauth2.Token, error) {
 	d, err := startDeviceAuth()
 	if err != nil {
 		return nil, err
@@ -81,19 +84,23 @@ func RequestLiveTokenWriter(w io.Writer) (*oauth2.Token, error) {
 	ticker := time.NewTicker(time.Second * time.Duration(d.Interval))
 	defer ticker.Stop()
 
-	for range ticker.C {
-		t, err := pollDeviceAuth(d.DeviceCode)
-		if err != nil {
-			return nil, fmt.Errorf("error polling for device auth: %w", err)
-		}
-		// If the token could not be obtained yet (authentication wasn't finished yet), the token is nil.
-		// We just retry if this is the case.
-		if t != nil {
-			_, _ = w.Write([]byte("Authentication successful.\n"))
-			return t, nil
+	for {
+		select {
+		case <-ticker.C:
+			t, err := pollDeviceAuth(d.DeviceCode)
+			if err != nil {
+				return nil, fmt.Errorf("error polling for device auth: %w", err)
+			}
+			// If the token could not be obtained yet (authentication wasn't finished yet), the token is nil.
+			// We just retry if this is the case.
+			if t != nil {
+				_, _ = w.Write([]byte("Authentication successful.\n"))
+				return t, nil
+			}
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
-	panic("unreachable")
 }
 
 // startDeviceAuth starts the device auth, retrieving a login URI for the user and a code the user needs to
