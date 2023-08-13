@@ -80,6 +80,8 @@ type ListenConfig struct {
 	// Login packet. The function is called with the header of the packet and its raw payload, the address
 	// from which the packet originated, and the destination address.
 	PacketFunc func(header packet.Header, payload []byte, src, dst net.Addr)
+
+	EarlyConnHandler func(*Conn)
 }
 
 // Listener implements a Minecraft listener on top of an unspecific net.Listener. It abstracts away the
@@ -235,7 +237,9 @@ func (listener *Listener) createConn(netConn net.Conn) {
 
 	conn.packetFunc = listener.cfg.PacketFunc
 	conn.texturePacksRequired = listener.cfg.TexturePacksRequired
-	conn.resourcePacks = listener.cfg.ResourcePacks
+	conn.ResourcePackHandler = &defaultResourcepackHandler{
+		resourcePacks: listener.cfg.ResourcePacks,
+	}
 	conn.biomes = listener.cfg.Biomes
 	conn.gameData.WorldName = listener.status().ServerName
 	conn.authEnabled = !listener.cfg.AuthenticationDisabled
@@ -274,6 +278,11 @@ func (listener *Listener) handleConn(conn *Conn) {
 		listener.playerCount.Add(-1)
 		listener.updatePongData()
 	}()
+
+	if listener.cfg.EarlyConnHandler != nil {
+		listener.cfg.EarlyConnHandler(conn)
+	}
+
 	for {
 		// We finally arrived at the packet decoding loop. We constantly decode packets that arrive
 		// and push them to the Conn so that they may be processed.

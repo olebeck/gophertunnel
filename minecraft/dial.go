@@ -100,6 +100,8 @@ type Dialer struct {
 
 	Key       *ecdsa.PrivateKey
 	ChainData string
+
+	EarlyConnHandler func(*Conn)
 }
 
 // Dial dials a Minecraft connection to the address passed over the network passed. The network is typically
@@ -238,6 +240,10 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		// If we got the identity data from Minecraft auth, we need to make sure we set it in the Conn too, as
 		// we are not aware of the identity data ourselves yet.
 		conn.identityData = identityData
+	}
+
+	if d.EarlyConnHandler != nil {
+		d.EarlyConnHandler(conn)
 	}
 
 	l, c := make(chan struct{}), make(chan struct{})
