@@ -201,6 +201,10 @@ func (pack *Pack) WriteTo(w io.Writer) (n int64, err error) {
 	return pack.content.WriteTo(w)
 }
 
+func (pack *Pack) Seek(offset int64, whence int) (int64, error) {
+	return pack.content.Seek(offset, whence)
+}
+
 // WithContentKey creates a copy of the pack and sets the encryption key to the key provided, after which the
 // new Pack is returned.
 func (pack Pack) WithContentKey(key string) *Pack {
