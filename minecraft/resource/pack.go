@@ -197,6 +197,10 @@ func (pack *Pack) ReadAt(b []byte, off int64) (n int, err error) {
 	return pack.content.ReadAt(b, off)
 }
 
+func (pack *Pack) WriteTo(w io.Writer) (n int64, err error) {
+	return pack.content.WriteTo(w)
+}
+
 // WithContentKey creates a copy of the pack and sets the encryption key to the key provided, after which the
 // new Pack is returned.
 func (pack Pack) WithContentKey(key string) *Pack {

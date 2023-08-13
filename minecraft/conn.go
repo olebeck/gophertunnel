@@ -71,6 +71,9 @@ type IConn interface {
 	StartGameTimeout(data GameData, timeout time.Duration) error
 	Write(b []byte) (n int, err error)
 	WritePacket(pk packet.Packet) error
+	Expect(...uint32)
+	OnDisconnect() <-chan struct{}
+	SetLoggedIn()
 
 	Pool() packet.Pool
 	ShieldID() int32
@@ -195,7 +198,7 @@ func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *log.Logger, proto Pro
 		proto:        proto,
 		readerLimits: limits,
 	}
-	conn.ResourcePackHandler = &defaultResourcepackHandler{}
+	conn.ResourcePackHandler = &defaultResourcepackHandler{c: conn}
 	if !limits {
 		// Disable the batch packet limit so that the server can send packets as often as it wants to.
 		conn.dec.DisableBatchPacketLimit()
@@ -220,6 +223,10 @@ func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *log.Logger, proto Pro
 	return conn
 }
 
+func (conn *Conn) SetLoggedIn() {
+	conn.loggedIn = true
+}
+
 func (conn *Conn) Pool() packet.Pool {
 	return conn.pool
 }
@@ -228,6 +235,10 @@ func (conn *Conn) ShieldID() int32 {
 }
 func (conn *Conn) Proto() Protocol {
 	return conn.proto
+}
+
+func (conn *Conn) OnDisconnect() <-chan struct{} {
+	return conn.close
 }
 
 func (conn *Conn) PacketFunc(header packet.Header, payload []byte, src, dst net.Addr) {
@@ -688,9 +699,9 @@ func (conn *Conn) handlePacket(pk packet.Packet) error {
 	case *packet.ClientCacheStatus:
 		return conn.handleClientCacheStatus(pk)
 	case *packet.ResourcePackClientResponse:
-		return conn.ResourcePackHandler.OnResourcePackClientResponse(conn, pk)
+		return conn.ResourcePackHandler.OnResourcePackClientResponse(pk)
 	case *packet.ResourcePackChunkRequest:
-		return conn.ResourcePackHandler.OnResourcePackChunkRequest(conn, pk)
+		return conn.ResourcePackHandler.OnResourcePackChunkRequest(pk)
 	case *packet.RequestChunkRadius:
 		return conn.handleRequestChunkRadius(pk)
 	case *packet.SetLocalPlayerAsInitialised:
@@ -704,13 +715,13 @@ func (conn *Conn) handlePacket(pk packet.Packet) error {
 	case *packet.PlayStatus:
 		return conn.handlePlayStatus(pk)
 	case *packet.ResourcePacksInfo:
-		return conn.ResourcePackHandler.OnResourcePacksInfo(conn, pk)
+		return conn.ResourcePackHandler.OnResourcePacksInfo(pk)
 	case *packet.ResourcePackDataInfo:
-		return conn.ResourcePackHandler.OnResourcePackDataInfo(conn, pk)
+		return conn.ResourcePackHandler.OnResourcePackDataInfo(pk)
 	case *packet.ResourcePackChunkData:
-		return conn.ResourcePackHandler.OnResourcePackChunkData(conn, pk)
+		return conn.ResourcePackHandler.OnResourcePackChunkData(pk)
 	case *packet.ResourcePackStack:
-		return conn.ResourcePackHandler.OnResourcePackStack(conn, pk)
+		return conn.ResourcePackHandler.OnResourcePackStack(pk)
 	case *packet.StartGame:
 		return conn.handleStartGame(pk)
 	case *packet.ChunkRadiusUpdated:
@@ -798,27 +809,7 @@ func (conn *Conn) handleClientToServerHandshake() error {
 	if err := conn.WritePacket(&packet.PlayStatus{Status: packet.PlayStatusLoginSuccess}); err != nil {
 		return fmt.Errorf("error sending play status login success: %v", err)
 	}
-	pk := &packet.ResourcePacksInfo{TexturePackRequired: conn.texturePacksRequired}
-	for _, pack := range conn.ResourcePacks() {
-		// If it has behaviours, add it to the behaviour pack list. If not, we add it to the texture packs
-		// list.
-		if pack.HasBehaviours() {
-			behaviourPack := protocol.BehaviourPackInfo{UUID: pack.UUID(), Version: pack.Version(), Size: uint64(pack.Len())}
-			if pack.HasScripts() {
-				// One of the resource packs has scripts, so we set HasScripts in the packet to true.
-				pk.HasScripts = true
-				behaviourPack.HasScripts = true
-			}
-			pk.BehaviourPacks = append(pk.BehaviourPacks, behaviourPack)
-			continue
-		}
-		texturePack := protocol.TexturePackInfo{UUID: pack.UUID(), Version: pack.Version(), Size: uint64(pack.Len())}
-		if pack.Encrypted() {
-			texturePack.ContentKey = pack.ContentKey()
-			texturePack.ContentIdentity = pack.Manifest().Header.UUID
-		}
-		pk.TexturePacks = append(pk.TexturePacks, texturePack)
-	}
+	pk := conn.ResourcePackHandler.GetResourcePacksInfo(conn.texturePacksRequired)
 	// Finally we send the packet after the play status.
 	if err := conn.WritePacket(pk); err != nil {
 		return fmt.Errorf("error sending resource packs info: %v", err)

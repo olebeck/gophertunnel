@@ -14,16 +14,18 @@ import (
 )
 
 type ResourcePackHandler interface {
-	OnResourcePacksInfo(*Conn, *packet.ResourcePacksInfo) error
-	OnResourcePackClientResponse(*Conn, *packet.ResourcePackClientResponse) error
-	OnResourcePackDataInfo(*Conn, *packet.ResourcePackDataInfo) error
-	OnResourcePackChunkRequest(*Conn, *packet.ResourcePackChunkRequest) error
-	OnResourcePackChunkData(*Conn, *packet.ResourcePackChunkData) error
-	OnResourcePackStack(*Conn, *packet.ResourcePackStack) error
+	OnResourcePacksInfo(*packet.ResourcePacksInfo) error
+	OnResourcePackClientResponse(*packet.ResourcePackClientResponse) error
+	OnResourcePackDataInfo(*packet.ResourcePackDataInfo) error
+	OnResourcePackChunkRequest(*packet.ResourcePackChunkRequest) error
+	OnResourcePackChunkData(*packet.ResourcePackChunkData) error
+	OnResourcePackStack(*packet.ResourcePackStack) error
+	GetResourcePacksInfo(bool) *packet.ResourcePacksInfo
 	ResourcePacks() []*resource.Pack
 }
 
 type defaultResourcepackHandler struct {
+	c         *Conn
 	packQueue *resourcePackQueue
 	packMu    sync.Mutex
 
@@ -42,7 +44,7 @@ func (r *defaultResourcepackHandler) ResourcePacks() []*resource.Pack {
 
 // OnResourcePacksInfo handles a ResourcePacksInfo packet sent by the server. The client responds by
 // sending the packs it needs downloaded.
-func (r *defaultResourcepackHandler) OnResourcePacksInfo(c *Conn, pk *packet.ResourcePacksInfo) error {
+func (r *defaultResourcepackHandler) OnResourcePacksInfo(pk *packet.ResourcePacksInfo) error {
 	// First create a new resource pack queue with the information in the packet so we can download them
 	// properly later.
 	totalPacks := len(pk.TexturePacks) + len(pk.BehaviourPacks)
@@ -55,11 +57,11 @@ func (r *defaultResourcepackHandler) OnResourcePacksInfo(c *Conn, pk *packet.Res
 
 	for index, pack := range pk.TexturePacks {
 		if _, ok := r.packQueue.downloadingPacks[pack.UUID]; ok {
-			c.log.Printf("duplicate texture pack entry %v in resource pack info\n", pack.UUID)
+			r.c.log.Printf("duplicate texture pack entry %v in resource pack info\n", pack.UUID)
 			r.packQueue.packAmount--
 			continue
 		}
-		if c.downloadResourcePack != nil && !c.downloadResourcePack(uuid.MustParse(pack.UUID), pack.Version, index, totalPacks) {
+		if r.c.downloadResourcePack != nil && !r.c.downloadResourcePack(uuid.MustParse(pack.UUID), pack.Version, index, totalPacks) {
 			r.ignoredResourcePacks = append(r.ignoredResourcePacks, exemptedResourcePack{
 				uuid:    pack.UUID,
 				version: pack.Version,
@@ -78,11 +80,11 @@ func (r *defaultResourcepackHandler) OnResourcePacksInfo(c *Conn, pk *packet.Res
 	}
 	for index, pack := range pk.BehaviourPacks {
 		if _, ok := r.packQueue.downloadingPacks[pack.UUID]; ok {
-			c.log.Printf("duplicate behaviour pack entry %v in resource pack info\n", pack.UUID)
+			r.c.log.Printf("duplicate behaviour pack entry %v in resource pack info\n", pack.UUID)
 			r.packQueue.packAmount--
 			continue
 		}
-		if c.downloadResourcePack != nil && !c.downloadResourcePack(uuid.MustParse(pack.UUID), pack.Version, index, totalPacks) {
+		if r.c.downloadResourcePack != nil && !r.c.downloadResourcePack(uuid.MustParse(pack.UUID), pack.Version, index, totalPacks) {
 			r.ignoredResourcePacks = append(r.ignoredResourcePacks, exemptedResourcePack{
 				uuid:    pack.UUID,
 				version: pack.Version,
@@ -101,22 +103,22 @@ func (r *defaultResourcepackHandler) OnResourcePacksInfo(c *Conn, pk *packet.Res
 	}
 
 	if len(packsToDownload) != 0 {
-		c.expect(packet.IDResourcePackDataInfo, packet.IDResourcePackChunkData)
-		_ = c.WritePacket(&packet.ResourcePackClientResponse{
+		r.c.expect(packet.IDResourcePackDataInfo, packet.IDResourcePackChunkData)
+		_ = r.c.WritePacket(&packet.ResourcePackClientResponse{
 			Response:        packet.PackResponseSendPacks,
 			PacksToDownload: packsToDownload,
 		})
 		return nil
 	}
-	c.expect(packet.IDResourcePackStack)
+	r.c.expect(packet.IDResourcePackStack)
 
-	_ = c.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseAllPacksDownloaded})
+	_ = r.c.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseAllPacksDownloaded})
 	return nil
 }
 
 // OnResourcePackDataInfo handles a resource pack data info packet, which initiates the downloading of the
 // pack by the client.
-func (r *defaultResourcepackHandler) OnResourcePackDataInfo(c *Conn, pk *packet.ResourcePackDataInfo) error {
+func (r *defaultResourcepackHandler) OnResourcePackDataInfo(pk *packet.ResourcePackDataInfo) error {
 	id := strings.Split(pk.UUID, "_")[0]
 
 	pack, ok := r.packQueue.downloadingPacks[id]
@@ -128,7 +130,7 @@ func (r *defaultResourcepackHandler) OnResourcePackDataInfo(c *Conn, pk *packet.
 	if pack.size != pk.Size {
 		// Size mismatch: The ResourcePacksInfo packet had a size for the pack that did not match with the
 		// size sent here.
-		c.log.Printf("pack %v had a different size in the ResourcePacksInfo packet than the ResourcePackDataInfo packet\n", pk.UUID)
+		r.c.log.Printf("pack %v had a different size in the ResourcePacksInfo packet than the ResourcePackDataInfo packet\n", pk.UUID)
 		pack.size = pk.Size
 	}
 
@@ -148,12 +150,12 @@ func (r *defaultResourcepackHandler) OnResourcePackDataInfo(c *Conn, pk *packet.
 	idCopy := pk.UUID
 	go func() {
 		for i := uint32(0); i < chunkCount; i++ {
-			_ = c.WritePacket(&packet.ResourcePackChunkRequest{
+			_ = r.c.WritePacket(&packet.ResourcePackChunkRequest{
 				UUID:       idCopy,
 				ChunkIndex: i,
 			})
 			select {
-			case <-c.close:
+			case <-r.c.close:
 				return
 			case frag := <-pack.newFrag:
 				// Write the fragment to the full buffer of the downloading resource pack.
@@ -164,21 +166,21 @@ func (r *defaultResourcepackHandler) OnResourcePackDataInfo(c *Conn, pk *packet.
 		defer r.packMu.Unlock()
 
 		if pack.buf.Len() != int(pack.size) {
-			c.log.Printf("incorrect resource pack size: expected %v, but got %v\n", pack.size, pack.buf.Len())
+			r.c.log.Printf("incorrect resource pack size: expected %v, but got %v\n", pack.size, pack.buf.Len())
 			return
 		}
 		// First parse the resource pack from the total byte buffer we obtained.
 		newPack, err := resource.FromBytes(pack.buf.Bytes())
 		if err != nil {
-			c.log.Printf("invalid full resource pack data for UUID %v: %v\n", id, err)
+			r.c.log.Printf("invalid full resource pack data for UUID %v: %v\n", id, err)
 			return
 		}
 		r.packQueue.packAmount--
 		// Finally we add the resource to the resource packs slice.
 		r.resourcePacks = append(r.resourcePacks, newPack.WithContentKey(pack.contentKey))
 		if r.packQueue.packAmount == 0 {
-			c.expect(packet.IDResourcePackStack)
-			_ = c.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseAllPacksDownloaded})
+			r.c.expect(packet.IDResourcePackStack)
+			_ = r.c.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseAllPacksDownloaded})
 		}
 	}()
 	return nil
@@ -186,7 +188,7 @@ func (r *defaultResourcepackHandler) OnResourcePackDataInfo(c *Conn, pk *packet.
 
 // OnChunkRequest handles a resource pack chunk request, which requests a part of the resource
 // pack to be downloaded.
-func (r *defaultResourcepackHandler) OnResourcePackChunkRequest(c *Conn, pk *packet.ResourcePackChunkRequest) error {
+func (r *defaultResourcepackHandler) OnResourcePackChunkRequest(pk *packet.ResourcePackChunkRequest) error {
 	current := r.packQueue.currentPack
 	if current.UUID() != pk.UUID {
 		return fmt.Errorf("resource pack chunk request had unexpected UUID: expected %v, but got %v", current.UUID(), pk.UUID)
@@ -212,13 +214,13 @@ func (r *defaultResourcepackHandler) OnResourcePackChunkRequest(c *Conn, pk *pac
 
 		defer func() {
 			if !r.packQueue.AllDownloaded() {
-				_ = r.nextResourcePackDownload(c)
+				_ = r.nextResourcePackDownload()
 			} else {
-				c.expect(packet.IDResourcePackClientResponse)
+				r.c.expect(packet.IDResourcePackClientResponse)
 			}
 		}()
 	}
-	if err := c.WritePacket(response); err != nil {
+	if err := r.c.WritePacket(response); err != nil {
 		return fmt.Errorf("error writing resource pack chunk data packet: %v", err)
 	}
 
@@ -227,7 +229,7 @@ func (r *defaultResourcepackHandler) OnResourcePackChunkRequest(c *Conn, pk *pac
 
 // OnResourcePackChunkData handles a resource pack chunk data packet, which holds a fragment of a resource
 // pack that is being downloaded.
-func (r *defaultResourcepackHandler) OnResourcePackChunkData(c *Conn, pk *packet.ResourcePackChunkData) error {
+func (r *defaultResourcepackHandler) OnResourcePackChunkData(pk *packet.ResourcePackChunkData) error {
 	pk.UUID = strings.Split(pk.UUID, "_")[0]
 	pack, ok := r.packQueue.awaitingPacks[pk.UUID]
 	if !ok {
@@ -251,22 +253,22 @@ func (r *defaultResourcepackHandler) OnResourcePackChunkData(c *Conn, pk *packet
 
 // nextResourcePackDownload moves to the next resource pack to download and sends a resource pack data info
 // packet with information about it.
-func (r *defaultResourcepackHandler) nextResourcePackDownload(c *Conn) error {
+func (r *defaultResourcepackHandler) nextResourcePackDownload() error {
 	pk, ok := r.packQueue.NextPack()
 	if !ok {
 		return fmt.Errorf("no resource packs to download")
 	}
-	if err := c.WritePacket(pk); err != nil {
+	if err := r.c.WritePacket(pk); err != nil {
 		return fmt.Errorf("error sending resource pack data info packet: %v", err)
 	}
 	// Set the next expected packet to ResourcePackChunkRequest packets.
-	c.expect(packet.IDResourcePackChunkRequest)
+	r.c.expect(packet.IDResourcePackChunkRequest)
 	return nil
 }
 
 // OnResourcePackStack handles a ResourcePackStack packet sent by the server. The stack defines the order
 // that resource packs are applied in.
-func (r *defaultResourcepackHandler) OnResourcePackStack(c *Conn, pk *packet.ResourcePackStack) error {
+func (r *defaultResourcepackHandler) OnResourcePackStack(pk *packet.ResourcePackStack) error {
 	// We currently don't apply resource packs in any way, so instead we just check if all resource packs in
 	// the stacks are also downloaded.
 	for _, pack := range pk.TexturePacks {
@@ -274,7 +276,7 @@ func (r *defaultResourcepackHandler) OnResourcePackStack(c *Conn, pk *packet.Res
 			if pack.UUID == behaviourPack.UUID {
 				// We had a behaviour pack with the same UUID as the texture pack, so we drop the texture
 				// pack and log it.
-				c.log.Printf("dropping behaviour pack with UUID %v due to a texture pack with the same UUID\n", pack.UUID)
+				r.c.log.Printf("dropping behaviour pack with UUID %v due to a texture pack with the same UUID\n", pack.UUID)
 				pk.BehaviourPacks = append(pk.BehaviourPacks[:i], pk.BehaviourPacks[i+1:]...)
 			}
 		}
@@ -287,8 +289,8 @@ func (r *defaultResourcepackHandler) OnResourcePackStack(c *Conn, pk *packet.Res
 			return fmt.Errorf("behaviour pack {uuid=%v, version=%v} not downloaded", pack.UUID, pack.Version)
 		}
 	}
-	c.expect(packet.IDStartGame)
-	_ = c.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseCompleted})
+	r.c.expect(packet.IDStartGame)
+	_ = r.c.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseCompleted})
 	return nil
 }
 
@@ -323,12 +325,12 @@ const packChunkSize = 1024 * 128
 
 // OnResourcePackClientResponse handles an incoming resource pack client response packet. The packet is
 // handled differently depending on the response.
-func (r *defaultResourcepackHandler) OnResourcePackClientResponse(c *Conn, pk *packet.ResourcePackClientResponse) error {
+func (r *defaultResourcepackHandler) OnResourcePackClientResponse(pk *packet.ResourcePackClientResponse) error {
 	switch pk.Response {
 	case packet.PackResponseRefused:
 		// Even though this response is never sent, we handle it appropriately in case it is changed to work
 		// correctly again.
-		return c.Close()
+		return r.c.Close()
 	case packet.PackResponseSendPacks:
 		packs := pk.PacksToDownload
 		r.packQueue = &resourcePackQueue{packs: r.resourcePacks}
@@ -337,7 +339,7 @@ func (r *defaultResourcepackHandler) OnResourcePackClientResponse(c *Conn, pk *p
 		}
 		// Proceed with the first resource pack download. We run all downloads in sequence rather than in
 		// parallel, as it's less prone to packet loss.
-		if err := r.nextResourcePackDownload(c); err != nil {
+		if err := r.nextResourcePackDownload(); err != nil {
 			return err
 		}
 	case packet.PackResponseAllPacksDownloaded:
@@ -358,13 +360,38 @@ func (r *defaultResourcepackHandler) OnResourcePackClientResponse(c *Conn, pk *p
 				Version: exempted.version,
 			})
 		}
-		if err := c.WritePacket(pk); err != nil {
+		if err := r.c.WritePacket(pk); err != nil {
 			return fmt.Errorf("error writing resource pack stack packet: %v", err)
 		}
 	case packet.PackResponseCompleted:
-		c.loggedIn = true
+		r.c.loggedIn = true
 	default:
 		return fmt.Errorf("unknown resource pack client response: %v", pk.Response)
 	}
 	return nil
+}
+
+func (r *defaultResourcepackHandler) GetResourcePacksInfo(texturePacksRequired bool) *packet.ResourcePacksInfo {
+	pk := &packet.ResourcePacksInfo{TexturePackRequired: texturePacksRequired}
+	for _, pack := range r.ResourcePacks() {
+		// If it has behaviours, add it to the behaviour pack list. If not, we add it to the texture packs
+		// list.
+		if pack.HasBehaviours() {
+			behaviourPack := protocol.BehaviourPackInfo{UUID: pack.UUID(), Version: pack.Version(), Size: uint64(pack.Len())}
+			if pack.HasScripts() {
+				// One of the resource packs has scripts, so we set HasScripts in the packet to true.
+				pk.HasScripts = true
+				behaviourPack.HasScripts = true
+			}
+			pk.BehaviourPacks = append(pk.BehaviourPacks, behaviourPack)
+			continue
+		}
+		texturePack := protocol.TexturePackInfo{UUID: pack.UUID(), Version: pack.Version(), Size: uint64(pack.Len())}
+		if pack.Encrypted() {
+			texturePack.ContentKey = pack.ContentKey()
+			texturePack.ContentIdentity = pack.Manifest().Header.UUID
+		}
+		pk.TexturePacks = append(pk.TexturePacks, texturePack)
+	}
+	return pk
 }

@@ -239,6 +239,7 @@ func (listener *Listener) createConn(netConn net.Conn) {
 	conn.texturePacksRequired = listener.cfg.TexturePacksRequired
 	conn.ResourcePackHandler = &defaultResourcepackHandler{
 		resourcePacks: listener.cfg.ResourcePacks,
+		c:             conn,
 	}
 	conn.biomes = listener.cfg.Biomes
 	conn.gameData.WorldName = listener.status().ServerName
