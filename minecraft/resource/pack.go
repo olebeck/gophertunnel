@@ -15,6 +15,7 @@ import (
 
 	"github.com/dlclark/regexp2"
 	"github.com/muhammadmuzzammil1998/jsonc"
+	"github.com/tailscale/hujson"
 )
 
 // Pack is a container of a resource pack parsed from a directory or a .zip archive (or .mcpack). It holds
@@ -398,7 +399,11 @@ func readManifest(path string) (*Manifest, image.Image, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading from manifest file: %v", err)
 	}
-	allData = []byte(FixupInvalidJson(string(allData)))
+	//allData = []byte(FixupInvalidJson(string(allData)))
+	allData, err = hujson.Standardize(allData)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error reading from manifest file %s: %v", path, err)
+	}
 
 	manifest := &Manifest{}
 	if err := jsonc.Unmarshal(allData, manifest); err != nil {

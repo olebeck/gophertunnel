@@ -21,7 +21,6 @@ type Reader struct {
 	r interface {
 		io.Reader
 		io.ByteReader
-		Len() int
 	}
 	shieldID      int32
 	limitsEnabled bool
@@ -31,13 +30,8 @@ type Reader struct {
 func NewReader(r interface {
 	io.Reader
 	io.ByteReader
-	Len() int
 }, shieldID int32, enableLimits bool) *Reader {
 	return &Reader{r: r, shieldID: shieldID, limitsEnabled: enableLimits}
-}
-
-func (r *Reader) Len() int {
-	return r.r.Len()
 }
 
 // Uint8 reads a uint8 from the underlying buffer.

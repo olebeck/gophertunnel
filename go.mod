@@ -3,6 +3,7 @@ module github.com/sandertv/gophertunnel
 go 1.18
 
 require (
+	github.com/dlclark/regexp2 v1.9.0
 	github.com/go-gl/mathgl v1.0.0
 	github.com/golang/snappy v0.0.4
 	github.com/google/uuid v1.3.0
@@ -15,12 +16,12 @@ require (
 	golang.org/x/oauth2 v0.4.0
 	golang.org/x/text v0.7.0
 	gopkg.in/square/go-jose.v2 v2.6.0
-	github.com/dlclark/regexp2 v1.9.0
 )
 
 require (
 	github.com/df-mc/atomic v1.10.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a // indirect
 	golang.org/x/crypto v0.5.0 // indirect
 	golang.org/x/image v0.5.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
