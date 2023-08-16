@@ -43,9 +43,6 @@ type AddActor struct {
 	// particular the way the entity looks. Flags include ones such as 'on fire' and 'sprinting'.
 	// The metadata values are indexed by their property key.
 	EntityMetadata map[uint32]any
-	// EntityProperties is a list of properties that the entity inhibits. These properties define and alter specific
-	// attributes of the entity.
-	EntityProperties protocol.EntityProperties
 	// EntityLinks is a list of entity links that are currently active on the entity. These links alter the
 	// way the entity shows up when first spawned in terms of it shown as riding an entity. Setting these
 	// links is important for new viewers to see the entity is riding another entity.
@@ -69,6 +66,5 @@ func (pk *AddActor) Marshal(io protocol.IO) {
 	io.Float32(&pk.BodyYaw)
 	protocol.Slice(io, &pk.Attributes)
 	io.EntityMetadata(&pk.EntityMetadata)
-	protocol.Single(io, &pk.EntityProperties)
 	protocol.Slice(io, &pk.EntityLinks)
 }

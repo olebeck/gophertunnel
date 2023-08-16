@@ -240,16 +240,6 @@ func init() {
 		IDRequestNetworkSettings:            func() Packet { return &RequestNetworkSettings{} },
 		IDGameTestRequest:                   func() Packet { return &GameTestRequest{} },
 		IDGameTestResults:                   func() Packet { return &GameTestResults{} },
-		IDUpdateClientInputLocks:            func() Packet { return &UpdateClientInputLocks{} },
-		IDClientCheatAbility:                func() Packet { return &ClientCheatAbility{} },
-		IDCameraPresets:                     func() Packet { return &CameraPresets{} },
-		IDUnlockedRecipes:                   func() Packet { return &UnlockedRecipes{} },
-		// ---
-		IDCameraInstruction:             func() Packet { return &CameraInstruction{} },
-		IDCompressedBiomeDefinitionList: func() Packet { return &CompressedBiomeDefinitionList{} },
-		IDTrimData:                      func() Packet { return &TrimData{} },
-		IDOpenSign:                      func() Packet { return &OpenSign{} },
-		IDAgentAnimation:                func() Packet { return &AgentAnimation{} },
 	}
 	for id, pk := range serverOriginating {
 		RegisterPacketFromServer(id, pk)
@@ -325,7 +315,6 @@ func init() {
 		IDEditorNetwork:                   func() Packet { return &EditorNetwork{} },
 		IDRequestNetworkSettings:          func() Packet { return &RequestNetworkSettings{} },
 		IDGameTestResults:                 func() Packet { return &GameTestResults{} },
-		IDOpenSign:                        func() Packet { return &OpenSign{} },
 	}
 	for id, pk := range clientOriginating {
 		RegisterPacketFromClient(id, pk)

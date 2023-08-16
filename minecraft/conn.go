@@ -906,8 +906,6 @@ func (conn *Conn) startGame() {
 		Dimension:                    data.Dimension,
 		WorldSpawn:                   data.WorldSpawn,
 		EditorWorld:                  data.EditorWorld,
-		CreatedInEditor:              data.CreatedInEditor,
-		ExportedFromEditor:           data.ExportedFromEditor,
 		PersonaDisabled:              data.PersonaDisabled,
 		CustomSkinsDisabled:          data.CustomSkinsDisabled,
 		GameRules:                    data.GameRules,
@@ -925,14 +923,12 @@ func (conn *Conn) startGame() {
 		PlayerMovementSettings:       data.PlayerMovementSettings,
 		WorldGameMode:                data.WorldGameMode,
 		ServerAuthoritativeInventory: data.ServerAuthoritativeInventory,
-		PlayerPermissions:            data.PlayerPermissions,
 		Experiments:                  data.Experiments,
 		ClientSideGeneration:         data.ClientSideGeneration,
 		ChatRestrictionLevel:         data.ChatRestrictionLevel,
 		DisablePlayerInteractions:    data.DisablePlayerInteractions,
 		BaseGameVersion:              data.BaseGameVersion,
 		GameVersion:                  protocol.CurrentVersion,
-		UseBlockNetworkIDHashes:      data.UseBlockNetworkIDHashes,
 	})
 	_ = conn.Flush()
 	conn.expect(packet.IDRequestChunkRadius, packet.IDSetLocalPlayerAsInitialised)
@@ -955,8 +951,6 @@ func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
 		Dimension:                    pk.Dimension,
 		WorldSpawn:                   pk.WorldSpawn,
 		EditorWorld:                  pk.EditorWorld,
-		CreatedInEditor:              pk.CreatedInEditor,
-		ExportedFromEditor:           pk.ExportedFromEditor,
 		PersonaDisabled:              pk.PersonaDisabled,
 		CustomSkinsDisabled:          pk.CustomSkinsDisabled,
 		GameRules:                    pk.GameRules,
@@ -967,12 +961,10 @@ func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
 		PlayerMovementSettings:       pk.PlayerMovementSettings,
 		WorldGameMode:                pk.WorldGameMode,
 		ServerAuthoritativeInventory: pk.ServerAuthoritativeInventory,
-		PlayerPermissions:            pk.PlayerPermissions,
 		ChatRestrictionLevel:         pk.ChatRestrictionLevel,
 		DisablePlayerInteractions:    pk.DisablePlayerInteractions,
 		ClientSideGeneration:         pk.ClientSideGeneration,
 		Experiments:                  pk.Experiments,
-		UseBlockNetworkIDHashes:      pk.UseBlockNetworkIDHashes,
 	}
 	for _, item := range pk.Items {
 		if item.Name == "minecraft:shield" {

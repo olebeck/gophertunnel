@@ -56,12 +56,6 @@ type GameData struct {
 	// EditorWorld is a value to dictate if the world is in editor mode, a special mode recently introduced adding
 	// "powerful tools for editing worlds, intended for experienced creators."
 	EditorWorld bool
-	// CreatedInEditor is a value to dictate if the world was created as a project in the editor mode. The functionality
-	// of this field is currently unknown.
-	CreatedInEditor bool
-	// ExportedFromEditor is a value to dictate if the world was exported from editor mode. The functionality of this
-	// field is currently unknown.
-	ExportedFromEditor bool
 	// WorldGameMode is the game mode that a player gets when it first spawns in the world. It is shown in the
 	// settings and is used if the PlayerGameMode is set to 5.
 	WorldGameMode int32
@@ -89,9 +83,6 @@ type GameData struct {
 	// Experiments is a list of experiments enabled on the server side. These experiments are used to enable
 	// disable experimental features.
 	Experiments []protocol.ExperimentData
-	// PlayerPermissions is the permission level of the player. It is a value from 0-3, with 0 being visitor,
-	// 1 being member, 2 being operator and 3 being custom.
-	PlayerPermissions int32
 	// ChunkRadius is the initial chunk radius that the connection gets. This can be changed later on using a
 	// packet.ChunkRadiusUpdated.
 	ChunkRadius int32
@@ -102,8 +93,4 @@ type GameData struct {
 	ChatRestrictionLevel uint8
 	// DisablePlayerInteractions is true if the client should ignore other players when interacting with the world.
 	DisablePlayerInteractions bool
-	// UseBlockNetworkIDHashes is true if the client should use the hash of a block's name as its network ID rather than
-	// its index in the expected block palette. This is useful for servers that wish to support multiple protocol versions
-	// and custom blocks, but it will result in extra bytes being written for every block in a sub chunk palette.
-	UseBlockNetworkIDHashes bool
 }

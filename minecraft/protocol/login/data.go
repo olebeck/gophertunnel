@@ -4,13 +4,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/sandertv/gophertunnel/minecraft/protocol"
-	"golang.org/x/text/language"
 	"net"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
+	"github.com/sandertv/gophertunnel/minecraft/protocol"
+	"golang.org/x/text/language"
 )
 
 // IdentityData contains identity data of the player logged in. It is found in one of the JWT claims signed
@@ -185,11 +186,6 @@ type ClientData struct {
 	UIProfile int
 	// TrustedSkin is a boolean indicating if the skin the client is using is trusted.
 	TrustedSkin bool
-	// OverrideSkin is a boolean that does not make sense to be here. The current usage of this field is unknown.
-	OverrideSkin bool
-	// CompatibleWithClientSideChunkGen is a boolean indicating if the client's hardware is capable of using the client
-	// side chunk generation system.
-	CompatibleWithClientSideChunkGen bool
 }
 
 // PersonaPiece represents a piece of a persona skin. All pieces are sent separately.
@@ -274,6 +270,9 @@ var checkVersion = regexp.MustCompile("[0-9.]").MatchString
 func (data ClientData) Validate() error {
 	if data.DeviceOS <= 0 || data.DeviceOS > 15 {
 		return fmt.Errorf("DeviceOS must carry a value between 1 and 15, but got %v", data.DeviceOS)
+	}
+	if _, err := uuid.Parse(data.DeviceID); err != nil {
+		return fmt.Errorf("DeviceID must be parseable as a valid UUID, but got %v", data.DeviceID)
 	}
 	if !checkVersion(data.GameVersion) {
 		return fmt.Errorf("GameVersion must only contain dots and numbers, but got %v", data.GameVersion)

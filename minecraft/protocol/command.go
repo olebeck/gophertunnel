@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"github.com/google/uuid"
-	"math"
 )
 
 // Command holds the data that a command requires to be shown to a player client-side. The command is shown in
@@ -20,12 +19,9 @@ type Command struct {
 	// field no longer seems to serve a purpose, as the client does not handle the execution of commands
 	// anymore: The permissions should be checked server-side.
 	PermissionLevel byte
-	// AliasesOffset is the offset to a CommandEnum that holds the values that
-	// should be used as aliases for this command.
-	AliasesOffset uint32
-	// ChainedSubcommandOffsets is a slice of offsets that all point to a different ChainedSubcommand from the
-	// ChainedSubcommands slice in the AvailableCommands packet.
-	ChainedSubcommandOffsets []uint16
+	// Aliases is a list of aliases of the command name, that may alternatively be used to execute the command
+	// in the same way.
+	Aliases []string
 	// Overloads is a list of command overloads that specify the ways in which a command may be executed. The
 	// overloads may be completely different.
 	Overloads []CommandOverload
@@ -36,8 +32,6 @@ func (c *Command) Marshal(r IO) {
 	r.String(&c.Description)
 	r.Uint16(&c.Flags)
 	r.Uint8(&c.PermissionLevel)
-	r.Uint32(&c.AliasesOffset)
-	FuncSlice(r, &c.ChainedSubcommandOffsets, r.Uint16)
 	Slice(r, &c.Overloads)
 }
 
@@ -73,15 +67,15 @@ const (
 	CommandArgTypeWildcardTarget  = 10
 	CommandArgTypeFilepath        = 17
 	CommandArgTypeIntegerRange    = 23
-	CommandArgTypeEquipmentSlots  = 43
-	CommandArgTypeString          = 44
-	CommandArgTypeBlockPosition   = 52
-	CommandArgTypePosition        = 53
-	CommandArgTypeMessage         = 55
-	CommandArgTypeRawText         = 58
-	CommandArgTypeJSON            = 62
-	CommandArgTypeBlockStates     = 71
-	CommandArgTypeCommand         = 74
+	CommandArgTypeEquipmentSlots  = 38
+	CommandArgTypeString          = 39
+	CommandArgTypeBlockPosition   = 47
+	CommandArgTypePosition        = 48
+	CommandArgTypeMessage         = 51
+	CommandArgTypeRawText         = 53
+	CommandArgTypeJSON            = 57
+	CommandArgTypeBlockStates     = 67
+	CommandArgTypeCommand         = 70
 )
 
 const (
@@ -114,6 +108,14 @@ type CommandParameter struct {
 	// Options holds a combinations of options that additionally apply to the command parameter. The list of
 	// options can be found above.
 	Options byte
+
+	// Enum is the enum of the parameter if it should be of the type enum. If non-empty, the parameter will
+	// be treated as an enum and show up as such client-side.
+	Enum CommandEnum
+	// Suffix is the suffix of the parameter if it should receive one. Note that only integer argument types
+	// are able to receive a suffix, and so the type, if Suffix is a non-empty string, will always be an
+	// integer.
+	Suffix string
 }
 
 func (c *CommandParameter) Marshal(r IO) {
@@ -130,40 +132,12 @@ type CommandEnum struct {
 	// argument if it has a certain amount of arguments, or when Options is set to true in the
 	// command holding the enum.
 	Type string
-	// ValueIndices holds a list of indices that point to the EnumValues slice in the
-	// AvailableCommandsPacket. These represent the options of the enum.
-	ValueIndices []uint
-}
-
-// CommandEnumContext holds context required for encoding command enums.
-type CommandEnumContext struct {
-	EnumValues []string
-}
-
-// Marshal encodes/decodes a CommandEnum.
-func (ctx CommandEnumContext) Marshal(r IO, x *CommandEnum) {
-	r.String(&x.Type)
-	FuncIOSlice(r, &x.ValueIndices, ctx.enumOption)
-}
-
-// enumOption writes/reads a command enum option as a byte/uint16/uint32,
-// depending on the amount of enum values.
-func (ctx CommandEnumContext) enumOption(r IO, opt *uint) {
-	n := len(ctx.EnumValues)
-	switch {
-	case n <= math.MaxUint8:
-		val := byte(*opt)
-		r.Uint8(&val)
-		*opt = uint(val)
-	case n <= math.MaxUint16:
-		val := uint16(*opt)
-		r.Uint16(&val)
-		*opt = uint(val)
-	default:
-		val := uint32(*opt)
-		r.Uint32(&val)
-		*opt = uint(val)
-	}
+	// Options is a list of options that are valid for the client to submit to the command. They will be able
+	// to be auto-completed and show up as options client-side.
+	Options []string
+	// Dynamic specifies if the command enum is considered dynamic. If set to true, it is written differently
+	// and may be updated during runtime as a result using the UpdateSoftEnum packet.
+	Dynamic bool
 }
 
 // ChainedSubcommand represents a subcommand that can have chained commands, such as /execute which allows you to run

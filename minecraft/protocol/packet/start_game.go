@@ -75,12 +75,6 @@ type StartGame struct {
 	// EditorWorld is a value to dictate if the world is in editor mode, a special mode recently introduced adding
 	// "powerful tools for editing worlds, intended for experienced creators."
 	EditorWorld bool
-	// CreatedInEditor is a value to dictate if the world was created as a project in the editor mode. The functionality
-	// of this field is currently unknown.
-	CreatedInEditor bool
-	// ExportedFromEditor is a value to dictate if the world was exported from editor mode. The functionality of this
-	// field is currently unknown.
-	ExportedFromEditor bool
 	// DayCycleLockTime is the time at which the day cycle was locked if the day cycle is disabled using the
 	// respective game rule. The client will maintain this time as long as the day cycle is disabled.
 	DayCycleLockTime int32
@@ -137,7 +131,7 @@ type StartGame struct {
 	StartWithMapEnabled bool
 	// PlayerPermissions is the permission level of the player. It is a value from 0-3, with 0 being visitor,
 	// 1 being member, 2 being operator and 3 being custom.
-	PlayerPermissions int32
+	PlayerPermissions uint8
 	// ServerChunkTickRadius is the radius around the player in which chunks are ticked. Most servers set this
 	// value to a fixed number, as it does not necessarily affect anything client-side.
 	ServerChunkTickRadius int32
@@ -168,8 +162,6 @@ type StartGame struct {
 	PersonaDisabled bool
 	// CustomSkinsDisabled is true if custom skins are disabled for the current game session.
 	CustomSkinsDisabled bool
-	// EmoteChatMuted specifies if players will be sent a chat message when using certain emotes.
-	EmoteChatMuted bool
 	// BaseGameVersion is the version of the game from which Vanilla features will be used. The exact function
 	// of this field isn't clear.
 	BaseGameVersion string
@@ -233,12 +225,6 @@ type StartGame struct {
 	ChatRestrictionLevel uint8
 	// DisablePlayerInteractions is true if the client should ignore other players when interacting with the world.
 	DisablePlayerInteractions bool
-	// UseBlockNetworkIDHashes is true if the client should use the hash of a block's name as its network ID rather than
-	// its index in the expected block palette. This is useful for servers that wish to support multiple protocol versions
-	// and custom blocks, but it will result in extra bytes being written for every block in a sub chunk palette.
-	UseBlockNetworkIDHashes bool
-	// ServerAuthoritativeSound is currently unknown as to what it does.
-	ServerAuthoritativeSound bool
 }
 
 // ID ...
@@ -263,8 +249,6 @@ func (pk *StartGame) Marshal(io protocol.IO) {
 	io.UBlockPos(&pk.WorldSpawn)
 	io.Bool(&pk.AchievementsDisabled)
 	io.Bool(&pk.EditorWorld)
-	io.Bool(&pk.CreatedInEditor)
-	io.Bool(&pk.ExportedFromEditor)
 	io.Varint32(&pk.DayCycleLockTime)
 	io.Varint32(&pk.EducationEditionOffer)
 	io.Bool(&pk.EducationFeaturesEnabled)
@@ -283,7 +267,7 @@ func (pk *StartGame) Marshal(io protocol.IO) {
 	io.Bool(&pk.ExperimentsPreviouslyToggled)
 	io.Bool(&pk.BonusChestEnabled)
 	io.Bool(&pk.StartWithMapEnabled)
-	io.Varint32(&pk.PlayerPermissions)
+	io.Uint8(&pk.PlayerPermissions)
 	io.Int32(&pk.ServerChunkTickRadius)
 	io.Bool(&pk.HasLockedBehaviourPack)
 	io.Bool(&pk.HasLockedTexturePack)
@@ -294,7 +278,6 @@ func (pk *StartGame) Marshal(io protocol.IO) {
 	io.Bool(&pk.OnlySpawnV1Villagers)
 	io.Bool(&pk.PersonaDisabled)
 	io.Bool(&pk.CustomSkinsDisabled)
-	io.Bool(&pk.EmoteChatMuted)
 	io.String(&pk.BaseGameVersion)
 	io.Int32(&pk.LimitedWorldWidth)
 	io.Int32(&pk.LimitedWorldDepth)
@@ -319,6 +302,4 @@ func (pk *StartGame) Marshal(io protocol.IO) {
 	io.Uint64(&pk.ServerBlockStateChecksum)
 	io.UUID(&pk.WorldTemplateID)
 	io.Bool(&pk.ClientSideGeneration)
-	io.Bool(&pk.UseBlockNetworkIDHashes)
-	io.Bool(&pk.ServerAuthoritativeSound)
 }

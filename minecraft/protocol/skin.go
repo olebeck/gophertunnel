@@ -71,9 +71,6 @@ type Skin struct {
 	// Trusted specifies if the skin is 'trusted'. No code should rely on this field, as any proxy or client
 	// can easily change it.
 	Trusted bool
-	// OverrideAppearance specifies if the skin should override the player's skin that is equipped client-side.
-	// When false, the client will reject the skin and continue to use the skin that the player has equipped.
-	OverrideAppearance bool
 }
 
 // Marshal encodes/decodes a Skin.
@@ -117,7 +114,6 @@ func (x *Skin) Marshal(r IO) {
 	r.Bool(&x.PersonaSkin)
 	r.Bool(&x.PersonaCapeOnClassicSkin)
 	r.Bool(&x.PrimaryUser)
-	r.Bool(&x.OverrideAppearance)
 }
 
 // validate checks the skin and makes sure every one of its values are correct. It checks the image dimensions

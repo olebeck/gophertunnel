@@ -342,8 +342,6 @@ func (r *Reader) ItemDescriptorCount(i *ItemDescriptorCount) {
 		i.Descriptor = &ItemTagItemDescriptor{}
 	case ItemDescriptorDeferred:
 		i.Descriptor = &DeferredItemDescriptor{}
-	case ItemDescriptorComplexAlias:
-		i.Descriptor = &ComplexAliasItemDescriptor{}
 	default:
 		r.UnknownEnumOption(id, "item descriptor type")
 		return

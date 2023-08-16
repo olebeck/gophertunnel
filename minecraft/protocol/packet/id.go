@@ -196,13 +196,4 @@ const (
 	IDRequestNetworkSettings
 	IDGameTestRequest
 	IDGameTestResults
-	IDUpdateClientInputLocks
-	IDClientCheatAbility
-	IDCameraPresets
-	IDUnlockedRecipes
-	IDCameraInstruction = iota + 101
-	IDCompressedBiomeDefinitionList
-	IDTrimData
-	IDOpenSign
-	IDAgentAnimation
 )

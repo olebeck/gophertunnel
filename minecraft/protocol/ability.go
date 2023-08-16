@@ -19,7 +19,6 @@ const (
 	AbilityMuted
 	AbilityWorldBuilder
 	AbilityNoClip
-	AbilityPrivilegedBuilder
 	AbilityCount
 )
 
@@ -28,7 +27,6 @@ const (
 	AbilityLayerTypeBase
 	AbilityLayerTypeSpectator
 	AbilityLayerTypeCommands
-	AbilityLayerTypeEditor
 )
 
 const (
