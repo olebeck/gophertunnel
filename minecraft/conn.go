@@ -110,6 +110,7 @@ type Conn struct {
 
 	identityData login.IdentityData
 	clientData   login.ClientData
+	onClientData func(*Conn)
 
 	gameData         GameData
 	gameDataReceived atomic.Bool
@@ -789,6 +790,9 @@ func (conn *Conn) handleLogin(pk *packet.Login) error {
 	conn.identityData, conn.clientData, authResult, err = login.Parse(pk.ConnectionRequest)
 	if err != nil {
 		return fmt.Errorf("parse login request: %w", err)
+	}
+	if conn.onClientData != nil {
+		conn.onClientData(conn)
 	}
 
 	// Make sure the player is logged in with XBOX Live when necessary.

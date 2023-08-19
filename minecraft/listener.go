@@ -82,6 +82,7 @@ type ListenConfig struct {
 	PacketFunc func(header packet.Header, payload []byte, src, dst net.Addr)
 
 	EarlyConnHandler func(*Conn)
+	OnClientData     func(*Conn)
 }
 
 // Listener implements a Minecraft listener on top of an unspecific net.Listener. It abstracts away the
@@ -235,6 +236,7 @@ func (listener *Listener) createConn(netConn net.Conn) {
 	conn.compression = listener.cfg.Compression
 	conn.pool = conn.proto.Packets(true)
 
+	conn.onClientData = listener.cfg.OnClientData
 	conn.packetFunc = listener.cfg.PacketFunc
 	conn.texturePacksRequired = listener.cfg.TexturePacksRequired
 	conn.ResourcePackHandler = &defaultResourcepackHandler{

@@ -37,7 +37,9 @@ type Dialer struct {
 
 	// ClientData is the client data used to login to the server with. It includes fields such as the skin,
 	// locale and UUIDs unique to the client. If empty, a default is sent produced using defaultClientData().
-	ClientData login.ClientData
+	clientData    login.ClientData
+	GetClientData func() login.ClientData
+
 	// IdentityData is the identity data used to login to the server with. It includes the username, UUID and
 	// XUID of the player.
 	// The IdentityData object is obtained using Minecraft auth if Email and Password are set. If not, the
@@ -208,10 +210,14 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		}
 	}
 
+	if d.GetClientData != nil {
+		d.clientData = d.GetClientData()
+	}
+
 	conn = newConn(netConn, d.Key, d.ErrorLog, d.Protocol, d.FlushRate, false)
 	conn.pool = conn.proto.Packets(false)
 	conn.identityData = d.IdentityData
-	conn.clientData = d.ClientData
+	conn.clientData = d.clientData
 	conn.packetFunc = d.PacketFunc
 	conn.downloadResourcePack = d.DownloadResourcePack
 	conn.cacheEnabled = d.EnableClientCache
