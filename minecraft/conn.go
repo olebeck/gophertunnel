@@ -1043,7 +1043,7 @@ func (conn *Conn) handleSetLocalPlayerAsInitialised(pk *packet.SetLocalPlayerAsI
 	if pk.EntityRuntimeID != conn.gameData.EntityRuntimeID {
 		return fmt.Errorf("entity runtime ID mismatch: entity runtime ID in StartGame and SetLocalPlayerAsInitialised packets should be equal")
 	}
-	if conn.waitingForSpawn.CAS(true, false) {
+	if conn.waitingForSpawn.CompareAndSwap(true, false) {
 		close(conn.spawn)
 	}
 	return nil
