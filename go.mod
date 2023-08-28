@@ -18,6 +18,11 @@ require (
 )
 
 require (
+	github.com/stretchr/testify v1.8.4 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
+)
+
+require (
 	github.com/df-mc/atomic v1.10.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a
