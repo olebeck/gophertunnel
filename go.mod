@@ -17,8 +17,6 @@ require (
 	gopkg.in/square/go-jose.v2 v2.6.0
 )
 
-require github.com/stretchr/testify v1.8.4 // indirect
-
 require (
 	github.com/df-mc/atomic v1.10.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
