@@ -1,6 +1,6 @@
 module github.com/sandertv/gophertunnel
 
-go 1.18
+go 1.19
 
 require (
 	github.com/dlclark/regexp2 v1.9.0
@@ -11,7 +11,6 @@ require (
 	github.com/muhammadmuzzammil1998/jsonc v1.0.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/sandertv/go-raknet v1.12.1
-	go.uber.org/atomic v1.11.0
 	golang.org/x/net v0.14.0
 	golang.org/x/oauth2 v0.11.0
 	golang.org/x/text v0.12.0
