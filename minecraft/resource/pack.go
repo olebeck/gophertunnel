@@ -376,15 +376,14 @@ func FixupInvalidJson(jsonString string) (fixedJsonString string) {
 func parseJson(s []byte, out any) error {
 	v, err := hujson.Parse(s)
 	if err != nil {
-		if !strings.Contains(err.Error(), "invalid character") {
+		if !strings.Contains(err.Error(), "after top-level value") {
 			return err
 		}
 	}
 	v.Standardize()
-	s = v.Pack()
 
-	d := json.NewDecoder(bytes.NewBuffer(s))
-	err = d.Decode(out)
+	d := json.NewDecoder(bytes.NewBuffer(v.Pack()))
+	err = d.Decode(&out)
 	if err != nil {
 		return err
 	}
@@ -417,7 +416,7 @@ func readManifest(path string) (*Manifest, image.Image, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading from manifest file: %v", err)
 	}
-	allData = []byte(FixupInvalidJson(string(allData)))
+	//allData = []byte(FixupInvalidJson(string(allData)))
 
 	manifest := Manifest{}
 	if err := parseJson(allData, &manifest); err != nil {
