@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"image"
 	"image/png"
@@ -14,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2"
-	"github.com/muhammadmuzzammil1998/jsonc"
 	"github.com/tailscale/hujson"
 )
 
@@ -373,6 +373,24 @@ func FixupInvalidJson(jsonString string) (fixedJsonString string) {
 	return s
 }
 
+func parseJson(s []byte, out any) error {
+	v, err := hujson.Parse(s)
+	if err != nil {
+		if !strings.Contains(err.Error(), "invalid character") {
+			return err
+		}
+	}
+	v.Standardize()
+	s = v.Pack()
+
+	d := json.NewDecoder(bytes.NewBuffer(s))
+	err = d.Decode(out)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // readManifest reads the manifest from the resource pack located at the path passed. If not found in the root
 // of the resource pack, it will also attempt to find it deeper down into the archive.
 func readManifest(path string) (*Manifest, image.Image, error) {
@@ -399,14 +417,10 @@ func readManifest(path string) (*Manifest, image.Image, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading from manifest file: %v", err)
 	}
-	//allData = []byte(FixupInvalidJson(string(allData)))
-	allData, err = hujson.Standardize(allData)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error reading from manifest file %s: %v", path, err)
-	}
+	allData = []byte(FixupInvalidJson(string(allData)))
 
-	manifest := &Manifest{}
-	if err := jsonc.Unmarshal(allData, manifest); err != nil {
+	manifest := Manifest{}
+	if err := parseJson(allData, &manifest); err != nil {
 		return nil, nil, fmt.Errorf("error decoding manifest JSON: %v (data: %v)", err, string(allData))
 	}
 	manifest.Header.UUID = strings.ToLower(manifest.Header.UUID)
@@ -424,5 +438,5 @@ func readManifest(path string) (*Manifest, image.Image, error) {
 		}
 	}
 
-	return manifest, icon, nil
+	return &manifest, icon, nil
 }
