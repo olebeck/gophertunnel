@@ -38,7 +38,7 @@ type unknownPacketError struct {
 }
 
 func (err unknownPacketError) Error() string {
-	return fmt.Sprintf("unknown packet with ID %v", err.id)
+	return fmt.Sprintf("unexpected packet with ID %v", err.id)
 }
 
 func (p *packetData) Decode(conn IConn) (pks []packet.Packet, err error) {
@@ -54,11 +54,7 @@ func (p *packetData) decode(conn IConn) (pks []packet.Packet, err error) {
 		if err == nil {
 			return
 		}
-		if _, ok := err.(unknownPacketError); ok {
-			if conn.DisconnectOnUnknownPacket() {
-				_ = conn.Close()
-			}
-		} else if conn.DisconnectOnInvalidPacket() {
+		if _, ok := err.(unknownPacketError); ok && conn.DisconnectOnUnknownPacket() {
 			_ = conn.Close()
 		}
 	}()
