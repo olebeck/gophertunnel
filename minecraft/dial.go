@@ -100,7 +100,7 @@ type Dialer struct {
 	// For getting this to work with BDS, authentication should be disabled.
 	KeepXBLIdentityData bool
 
-	Key       *ecdsa.PrivateKey
+	ChainKey  *ecdsa.PrivateKey
 	ChainData string
 
 	EarlyConnHandler func(*Conn)
@@ -167,16 +167,6 @@ func CreateChain(ctx context.Context, src oauth2.TokenSource) (key *ecdsa.Privat
 // typically "raknet". A Conn is returned which may be used to receive packets from and send packets to.
 // If a connection is not established before the context passed is cancelled, DialContext returns an error.
 func (d Dialer) DialContext(ctx context.Context, network, address string) (conn *Conn, err error) {
-	key, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-
-	var chainData string
-	if d.TokenSource != nil {
-		chainData, err = authChain(ctx, d.TokenSource, key)
-		if err != nil {
-			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
-		}
-		d.IdentityData = readChainIdentityData([]byte(chainData))
-	}
 	if d.ErrorLog == nil {
 		d.ErrorLog = log.New(os.Stderr, "", log.LstdFlags)
 	}
@@ -203,18 +193,19 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		return nil, err
 	}
 
-	if d.Key == nil || d.ChainData == "" {
-		d.Key, d.ChainData, err = CreateChain(ctx, d.TokenSource)
+	if d.ChainKey == nil || d.ChainData == "" {
+		d.ChainKey, d.ChainData, err = CreateChain(ctx, d.TokenSource)
 		if err != nil {
-			return nil, err
+			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
 		}
 	}
+	d.IdentityData = readChainIdentityData([]byte(d.ChainData))
 
 	if d.GetClientData != nil {
 		d.clientData = d.GetClientData()
 	}
 
-	conn = newConn(netConn, d.Key, d.ErrorLog, d.Protocol, d.FlushRate, false)
+	conn = newConn(netConn, d.ChainKey, d.ErrorLog, d.Protocol, d.FlushRate, false)
 	conn.pool = conn.proto.Packets(false)
 	conn.identityData = d.IdentityData
 	conn.clientData = d.clientData
@@ -235,13 +226,13 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		if !d.KeepXBLIdentityData {
 			clearXBLIdentityData(&conn.identityData)
 		}
-		request = login.EncodeOffline(conn.identityData, conn.clientData, d.Key)
+		request = login.EncodeOffline(conn.identityData, conn.clientData, d.ChainKey)
 	} else {
 		// We login as an Android device and this will show up in the 'titleId' field in the JWT chain, which
 		// we can't edit. We just enforce Android data for logging in.
 		setAndroidData(&conn.clientData)
 
-		request = login.Encode(d.ChainData, conn.clientData, d.Key)
+		request = login.Encode(d.ChainData, conn.clientData, d.ChainKey)
 		identityData, _, _, _ := login.Parse(request)
 		// If we got the identity data from Minecraft auth, we need to make sure we set it in the Conn too, as
 		// we are not aware of the identity data ourselves yet.
@@ -289,6 +280,9 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 // readChainIdentityData reads a login.IdentityData from the Mojang chain
 // obtained through authentication.
 func readChainIdentityData(chainData []byte) login.IdentityData {
+	if len(chainData) == 0 {
+		return login.IdentityData{}
+	}
 	chain := struct{ Chain []string }{}
 	if err := json.Unmarshal(chainData, &chain); err != nil {
 		panic("invalid chain data from authentication: " + err.Error())
