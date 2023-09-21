@@ -18,6 +18,12 @@ const (
 	ChatRestrictionLevelDisabled = 2
 )
 
+const (
+	EditorWorldTypeNotEditor = iota
+	EditorWorldTypeProject
+	EditorWorldTypeTestLevel
+)
+
 // StartGame is sent by the server to send information about the world the player will be spawned in. It
 // contains information about the position the player spawns in, and information about the world in general
 // such as its game rules.
@@ -72,9 +78,9 @@ type StartGame struct {
 	// value is set to true while the player's or the world's game mode is creative, and it's recommended to
 	// simply always set this to false as a server.
 	AchievementsDisabled bool
-	// EditorWorld is a value to dictate if the world is in editor mode, a special mode recently introduced adding
-	// "powerful tools for editing worlds, intended for experienced creators."
-	EditorWorld bool
+	// EditorWorldType is a value to dictate the type of editor mode, a special mode recently introduced adding
+	// "powerful tools for editing worlds, intended for experienced creators." It is one of the constants above.
+	EditorWorldType int32
 	// CreatedInEditor is a value to dictate if the world was created as a project in the editor mode. The functionality
 	// of this field is currently unknown.
 	CreatedInEditor bool
@@ -182,7 +188,7 @@ type StartGame struct {
 	EducationSharedResourceURI protocol.EducationSharedResourceURI
 	// ForceExperimentalGameplay specifies if experimental gameplay should be force enabled. For servers this
 	// should always be set to false.
-	ForceExperimentalGameplay protocol.Optional[bool]
+	ForceExperimentalGameplay bool
 	// LevelID is a base64 encoded world ID that is used to identify the world.
 	LevelID string
 	// WorldName is the name of the world that the player is joining. Note that this field shows up above the
@@ -262,7 +268,7 @@ func (pk *StartGame) Marshal(io protocol.IO) {
 	io.Varint32(&pk.Difficulty)
 	io.UBlockPos(&pk.WorldSpawn)
 	io.Bool(&pk.AchievementsDisabled)
-	io.Bool(&pk.EditorWorld)
+	io.Varint32(&pk.EditorWorldType)
 	io.Bool(&pk.CreatedInEditor)
 	io.Bool(&pk.ExportedFromEditor)
 	io.Varint32(&pk.DayCycleLockTime)
@@ -300,7 +306,7 @@ func (pk *StartGame) Marshal(io protocol.IO) {
 	io.Int32(&pk.LimitedWorldDepth)
 	io.Bool(&pk.NewNether)
 	protocol.Single(io, &pk.EducationSharedResourceURI)
-	protocol.OptionalFunc(io, &pk.ForceExperimentalGameplay, io.Bool)
+	io.Bool(&pk.ForceExperimentalGameplay)
 	io.Uint8(&pk.ChatRestrictionLevel)
 	io.Bool(&pk.DisablePlayerInteractions)
 	io.String(&pk.LevelID)

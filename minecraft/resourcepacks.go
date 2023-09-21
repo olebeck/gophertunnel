@@ -170,7 +170,7 @@ func (r *defaultResourcepackHandler) OnResourcePackDataInfo(pk *packet.ResourceP
 			return
 		}
 		// First parse the resource pack from the total byte buffer we obtained.
-		newPack, err := resource.FromBytes(pack.buf.Bytes())
+		newPack, err := resource.Read(pack.buf)
 		if err != nil {
 			r.c.log.Printf("invalid full resource pack data for UUID %v: %v\n", id, err)
 			return
@@ -374,6 +374,13 @@ func (r *defaultResourcepackHandler) OnResourcePackClientResponse(pk *packet.Res
 func (r *defaultResourcepackHandler) GetResourcePacksInfo(texturePacksRequired bool) *packet.ResourcePacksInfo {
 	pk := &packet.ResourcePacksInfo{TexturePackRequired: texturePacksRequired}
 	for _, pack := range r.ResourcePacks() {
+		if pack.DownloadURL() != "" {
+			pk.PackURLs = append(pk.PackURLs, protocol.PackURL{
+				UUIDVersion: fmt.Sprintf("%s_%s", pack.UUID(), pack.Version()),
+				URL:         pack.DownloadURL(),
+			})
+		}
+
 		// If it has behaviours, add it to the behaviour pack list. If not, we add it to the texture packs
 		// list.
 		if pack.HasBehaviours() {
