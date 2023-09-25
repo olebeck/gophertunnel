@@ -8,7 +8,6 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/uuid v1.3.1
 	github.com/klauspost/compress v1.16.7
-	github.com/muhammadmuzzammil1998/jsonc v1.0.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/sandertv/go-raknet v1.12.1
 	golang.org/x/net v0.14.0
