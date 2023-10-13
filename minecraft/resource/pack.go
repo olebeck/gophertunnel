@@ -41,6 +41,8 @@ type Pack struct {
 	checksum [32]byte
 
 	icon image.Image
+
+	baseDir string
 }
 
 // ReadPath compiles a resource pack found at the path passed. The resource pack must either be a zip archive
@@ -152,6 +154,10 @@ func (pack *Pack) Modules() []Module {
 // function correctly.
 func (pack *Pack) Dependencies() []Dependency {
 	return pack.manifest.Dependencies
+}
+
+func (pack *Pack) BaseDir() string {
+	return pack.baseDir
 }
 
 // HasScripts checks if any of the modules of the resource pack have the type 'client_data', meaning they have
@@ -289,7 +295,7 @@ func compile(path string) (*Pack, error) {
 		}()
 	}
 	// First we read the manifest to ensure that it exists and is valid.
-	manifest, icon, err := readManifest(path)
+	manifest, icon, baseDir, err := readManifest(path)
 	if err != nil {
 		return nil, fmt.Errorf("error reading manifest: %v", err)
 	}
@@ -303,7 +309,7 @@ func compile(path string) (*Pack, error) {
 	checksum := sha256.Sum256(content)
 	contentReader := bytes.NewReader(content)
 
-	return &Pack{manifest: manifest, checksum: checksum, content: contentReader, icon: icon}, nil
+	return &Pack{manifest: manifest, checksum: checksum, content: contentReader, icon: icon, baseDir: baseDir}, nil
 }
 
 // createTempArchive creates a zip archive from the files in the path passed and writes it to a temporary
@@ -385,7 +391,7 @@ type packReader struct {
 
 // find attempts to find a file in a zip reader. If found, it returns an Open()ed reader of the file that may
 // be used to read data from the file.
-func (reader packReader) find(fileName string) (io.ReadCloser, error) {
+func (reader packReader) find(fileName string) (io.ReadCloser, string, error) {
 	for _, file := range reader.File {
 		base := filepath.Base(file.Name)
 		if file.Name != fileName && base != fileName {
@@ -393,11 +399,11 @@ func (reader packReader) find(fileName string) (io.ReadCloser, error) {
 		}
 		fileReader, err := file.Open()
 		if err != nil {
-			return nil, fmt.Errorf("error opening zip file %v: %v", file.Name, err)
+			return nil, "", fmt.Errorf("error opening zip file %v: %v", file.Name, err)
 		}
-		return fileReader, nil
+		return fileReader, file.Name, nil
 	}
-	return nil, fmt.Errorf("could not find '%v' in zip", fileName)
+	return nil, "", fmt.Errorf("could not find '%v' in zip", fileName)
 }
 
 func FixupInvalidJson(jsonString string) (fixedJsonString string) {
@@ -434,10 +440,10 @@ func parseJson(s []byte, out any) error {
 
 // readManifest reads the manifest from the resource pack located at the path passed. If not found in the root
 // of the resource pack, it will also attempt to find it deeper down into the archive.
-func readManifest(path string) (*Manifest, image.Image, error) {
+func readManifest(path string) (*Manifest, image.Image, string, error) {
 	r, err := zip.OpenReader(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error opening zip reader: %v", err)
+		return nil, nil, "", fmt.Errorf("error opening zip reader: %v", err)
 	}
 	reader := packReader{ReadCloser: r}
 	defer func() {
@@ -445,10 +451,11 @@ func readManifest(path string) (*Manifest, image.Image, error) {
 	}()
 
 	// Try to find the manifest file in the zip.
-	manifestFile, err := reader.find("manifest.json")
+	manifestFile, name, err := reader.find("manifest.json")
 	if err != nil {
-		return nil, nil, fmt.Errorf("error loading manifest: %v", err)
+		return nil, nil, "", fmt.Errorf("error loading manifest: %v", err)
 	}
+	baseDir := filepath.Dir(name)
 	defer func() {
 		_ = manifestFile.Close()
 	}()
@@ -456,22 +463,22 @@ func readManifest(path string) (*Manifest, image.Image, error) {
 	// Read all data from the manifest file so that we can decode it into a Manifest struct.
 	allData, err := io.ReadAll(manifestFile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("error reading from manifest file: %v", err)
+		return nil, nil, "", fmt.Errorf("error reading from manifest file: %v", err)
 	}
 	//allData = []byte(FixupInvalidJson(string(allData)))
 
 	manifest := Manifest{}
 	if err := parseJson(allData, &manifest); err != nil {
-		return nil, nil, fmt.Errorf("error decoding manifest JSON: %v (data: %v)", err, string(allData))
+		return nil, nil, "", fmt.Errorf("error decoding manifest JSON: %v (data: %v)", err, string(allData))
 	}
 	manifest.Header.UUID = strings.ToLower(manifest.Header.UUID)
 
-	if _, err := reader.find("level.dat"); err == nil {
+	if _, _, err := reader.find("level.dat"); err == nil {
 		manifest.worldTemplate = true
 	}
 
 	var icon image.Image
-	if iconFile, err := reader.find("pack_icon.png"); err == nil {
+	if iconFile, _, err := reader.find("pack_icon.png"); err == nil {
 		defer iconFile.Close()
 		icon, err = png.Decode(iconFile)
 		if err != nil {
@@ -479,5 +486,5 @@ func readManifest(path string) (*Manifest, image.Image, error) {
 		}
 	}
 
-	return &manifest, icon, nil
+	return &manifest, icon, baseDir, nil
 }
