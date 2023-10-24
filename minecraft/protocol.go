@@ -23,10 +23,10 @@ type Protocol interface {
 	Packets(listener bool) packet.Pool
 	// NewReader returns a protocol.IO that implements reading operations for reading types
 	// that are used for this Protocol.
-	NewReader(r reader, shieldID int32, enableLimits bool) protocol.IO
+	NewReader(r ByteReader, shieldID int32, enableLimits bool) protocol.IO
 	// NewWriter returns a protocol.IO that implements writing operations for writing types
 	// that are used for this Protocol.
-	NewWriter(w writer, shieldID int32) protocol.IO
+	NewWriter(w ByteWriter, shieldID int32) protocol.IO
 	// ConvertToLatest converts a packet.Packet obtained from the other end of a Conn to a slice of packet.Packets from
 	// the latest protocol. Any packet.Packet implementation in the packet.Pool obtained through a call to Packets that
 	// is not identical to the most recent version of that packet.Packet must be converted to the most recent version of
@@ -40,13 +40,13 @@ type Protocol interface {
 	ConvertFromLatest(pk packet.Packet, conn IConn) []packet.Packet
 }
 
-type reader interface {
+type ByteReader interface {
 	io.Reader
 	io.ByteReader
 	Len() int
 }
 
-type writer interface {
+type ByteWriter interface {
 	io.Writer
 	io.ByteWriter
 }
@@ -63,10 +63,10 @@ func (p proto) Packets(listener bool) packet.Pool {
 	}
 	return packet.NewServerPool()
 }
-func (p proto) NewReader(r reader, shieldID int32, enableLimits bool) protocol.IO {
+func (p proto) NewReader(r ByteReader, shieldID int32, enableLimits bool) protocol.IO {
 	return protocol.NewReader(r, shieldID, enableLimits)
 }
-func (p proto) NewWriter(w writer, shieldID int32) protocol.IO {
+func (p proto) NewWriter(w ByteWriter, shieldID int32) protocol.IO {
 	return protocol.NewWriter(w, shieldID)
 }
 func (p proto) ConvertToLatest(pk packet.Packet, _ IConn) []packet.Packet { return []packet.Packet{pk} }
