@@ -294,8 +294,32 @@ func compile(path string) (*Pack, error) {
 			_ = os.Remove(temp.Name())
 		}()
 	}
+
+	// open and check if its the outer zip
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, fmt.Errorf("error opening zip reader: %v", err)
+	}
+	defer func() {
+		_ = zr.Close()
+	}()
+
+	// if there is only 1 zip file open it and return it instead
+	if len(zr.File) == 1 && strings.HasSuffix(zr.File[0].Name, ".zip") {
+		r, err := zr.File[0].Open()
+		if err != nil {
+			return nil, err
+		}
+		p, err := Read(r)
+		if err != nil {
+			return nil, err
+		}
+		return p, nil
+	}
+
 	// First we read the manifest to ensure that it exists and is valid.
-	manifest, icon, baseDir, err := readManifest(path)
+	reader := packReader{ReadCloser: zr}
+	manifest, icon, baseDir, err := reader.readManifest()
 	if err != nil {
 		return nil, fmt.Errorf("error reading manifest: %v", err)
 	}
@@ -440,16 +464,7 @@ func parseJson(s []byte, out any) error {
 
 // readManifest reads the manifest from the resource pack located at the path passed. If not found in the root
 // of the resource pack, it will also attempt to find it deeper down into the archive.
-func readManifest(path string) (*Manifest, image.Image, string, error) {
-	r, err := zip.OpenReader(path)
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("error opening zip reader: %v", err)
-	}
-	reader := packReader{ReadCloser: r}
-	defer func() {
-		_ = r.Close()
-	}()
-
+func (reader packReader) readManifest() (*Manifest, image.Image, string, error) {
 	// Try to find the manifest file in the zip.
 	manifestFile, name, err := reader.find("manifest.json")
 	if err != nil {
