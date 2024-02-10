@@ -554,12 +554,11 @@ func (conn *Conn) SetDeadline(t time.Time) error {
 // SetReadDeadline sets the read deadline of the Conn to the time passed. The time must be after time.Now().
 // Passing an empty time.Time to the method (time.Time{}) results in the read deadline being cleared.
 func (conn *Conn) SetReadDeadline(t time.Time) error {
-	if t.Before(time.Now()) {
-		panic(fmt.Errorf("error setting read deadline: time passed is before time.Now()"))
-	}
 	empty := time.Time{}
 	if t == empty {
 		conn.readDeadline = make(chan time.Time)
+	} else if t.Before(time.Now()) {
+		panic(fmt.Errorf("error setting read deadline: time passed is before time.Now()"))
 	} else {
 		conn.readDeadline = time.After(time.Until(t))
 	}
@@ -765,7 +764,7 @@ func (conn *Conn) handleRequestNetworkSettings(pk *packet.RequestNetworkSettings
 	}
 	_ = conn.Flush()
 	conn.enc.EnableCompression(conn.compression)
-	conn.dec.EnableCompression(conn.compression)
+	conn.dec.EnableCompression()
 	return nil
 }
 
@@ -776,7 +775,7 @@ func (conn *Conn) handleNetworkSettings(pk *packet.NetworkSettings) error {
 		return fmt.Errorf("unknown compression algorithm: %v", pk.CompressionAlgorithm)
 	}
 	conn.enc.EnableCompression(alg)
-	conn.dec.EnableCompression(alg)
+	conn.dec.EnableCompression()
 	conn.readyToLogin = true
 	return nil
 }
