@@ -259,7 +259,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		return conn, conn.wrap(ctx.Err(), "dial")
 	case <-l:
 		// We've received our network settings, so we can now send our login request.
-		conn.expect(packet.IDServerToClientHandshake, packet.IDPlayStatus)
+		conn.expect(packet.IDServerToClientHandshake, packet.IDPlayStatus, packet.IDResourcePacksInfo)
 		if err := conn.WritePacket(&packet.Login{ConnectionRequest: request, ClientProtocol: d.Protocol.ID()}); err != nil {
 			return conn, err
 		}
