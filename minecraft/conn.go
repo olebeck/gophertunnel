@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -18,7 +19,6 @@ import (
 	"github.com/go-jose/go-jose/v3"
 	"github.com/go-jose/go-jose/v3/jwt"
 	"github.com/google/uuid"
-	"github.com/sandertv/go-raknet"
 	"github.com/sandertv/gophertunnel/minecraft/internal"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
@@ -507,7 +507,7 @@ func (conn *Conn) Flush() error {
 	defer conn.sendMu.Unlock()
 
 	if len(conn.bufferedSend) > 0 {
-		if err := conn.enc.Encode(conn.bufferedSend); err != nil && !raknet.ErrConnectionClosed(err) {
+		if err := conn.enc.Encode(conn.bufferedSend); err != nil && !errors.Is(err, net.ErrClosed) {
 			// Should never happen.
 			panic(fmt.Errorf("error encoding packet batch: %v", err))
 		}
