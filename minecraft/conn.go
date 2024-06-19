@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -18,7 +19,6 @@ import (
 	"github.com/go-jose/go-jose/v3"
 	"github.com/go-jose/go-jose/v3/jwt"
 	"github.com/google/uuid"
-	"github.com/sandertv/go-raknet"
 	"github.com/sandertv/gophertunnel/minecraft/internal"
 	"github.com/sandertv/gophertunnel/minecraft/nbt"
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
@@ -507,9 +507,9 @@ func (conn *Conn) Flush() error {
 	defer conn.sendMu.Unlock()
 
 	if len(conn.bufferedSend) > 0 {
-		if err := conn.enc.Encode(conn.bufferedSend); err != nil && !raknet.ErrConnectionClosed(err) {
+		if err := conn.enc.Encode(conn.bufferedSend); err != nil && !errors.Is(err, net.ErrClosed) {
 			// Should never happen.
-			panic(fmt.Errorf("error encoding packet batch: %v", err))
+			panic(fmt.Errorf("error encoding packet batch: %w", err))
 		}
 		// First manually clear out conn.bufferedSend so that re-using the slice after resetting its length to
 		// 0 doesn't result in an 'invisible' memory leak.
@@ -679,7 +679,7 @@ func (conn *Conn) handleMultiple(pks []packet.Packet) error {
 	var err error
 	for _, pk := range pks {
 		if e := conn.handlePacket(pk); e != nil {
-			err = e
+			err = fmt.Errorf("handle %T: %w", pk, e)
 		}
 	}
 	return err
@@ -752,7 +752,7 @@ func (conn *Conn) handleRequestNetworkSettings(pk *packet.RequestNetworkSettings
 			status = packet.PlayStatusLoginFailedServer
 		}
 		_ = conn.WritePacket(&packet.PlayStatus{Status: status})
-		return fmt.Errorf("%v connected with an incompatible protocol: expected protocol = %v, client protocol = %v", conn.identityData.DisplayName, protocol.CurrentProtocol, pk.ClientProtocol)
+		return fmt.Errorf("incompatible protocol version: expected %v, got %v", protocol.CurrentProtocol, pk.ClientProtocol)
 	}
 
 	conn.expect(packet.IDLogin)
@@ -760,7 +760,7 @@ func (conn *Conn) handleRequestNetworkSettings(pk *packet.RequestNetworkSettings
 		CompressionThreshold: 512,
 		CompressionAlgorithm: conn.compression.EncodeCompression(),
 	}); err != nil {
-		return fmt.Errorf("error sending network settings: %v", err)
+		return fmt.Errorf("send NetworkSettings: %w", err)
 	}
 	_ = conn.Flush()
 	conn.enc.EnableCompression(conn.compression)
@@ -772,7 +772,7 @@ func (conn *Conn) handleRequestNetworkSettings(pk *packet.RequestNetworkSettings
 func (conn *Conn) handleNetworkSettings(pk *packet.NetworkSettings) error {
 	alg, ok := packet.CompressionByID(pk.CompressionAlgorithm)
 	if !ok {
-		return fmt.Errorf("unknown compression algorithm: %v", pk.CompressionAlgorithm)
+		return fmt.Errorf("unknown compression algorithm %v", pk.CompressionAlgorithm)
 	}
 	conn.enc.EnableCompression(alg)
 	conn.dec.EnableCompression()
@@ -800,10 +800,10 @@ func (conn *Conn) handleLogin(pk *packet.Login) error {
 	// Make sure the player is logged in with XBOX Live when necessary.
 	if !authResult.XBOXLiveAuthenticated && conn.authEnabled {
 		_ = conn.WritePacket(&packet.Disconnect{Message: text.Colourf("<red>You must be logged in with XBOX Live to join.</red>")})
-		return fmt.Errorf("connection %v was not authenticated to XBOX Live", conn.RemoteAddr())
+		return fmt.Errorf("client was not authenticated to XBOX Live")
 	}
 	if err := conn.enableEncryption(authResult.PublicKey); err != nil {
-		return fmt.Errorf("error enabling encryption: %v", err)
+		return fmt.Errorf("enable encryption: %w", err)
 	}
 	return nil
 }
@@ -813,12 +813,12 @@ func (conn *Conn) handleClientToServerHandshake() error {
 	// The next expected packet is a resource pack client response.
 	conn.expect(packet.IDResourcePackClientResponse, packet.IDClientCacheStatus)
 	if err := conn.WritePacket(&packet.PlayStatus{Status: packet.PlayStatusLoginSuccess}); err != nil {
-		return fmt.Errorf("error sending play status login success: %v", err)
+		return fmt.Errorf("send PlayStatus (Status=LoginSuccess): %w", err)
 	}
 	pk := conn.ResourcePackHandler.GetResourcePacksInfo(conn.texturePacksRequired)
 	// Finally we send the packet after the play status.
 	if err := conn.WritePacket(pk); err != nil {
-		return fmt.Errorf("error sending resource packs info: %v", err)
+		return fmt.Errorf("send ResourcePacksInfo: %w", err)
 	}
 	return nil
 }
@@ -872,7 +872,7 @@ func (conn *Conn) handleServerToClientHandshake(pk *packet.ServerToClientHandsha
 	c.Salt = strings.TrimRight(c.Salt, "=")
 	salt, err := base64.RawStdEncoding.DecodeString(c.Salt)
 	if err != nil {
-		return fmt.Errorf("error base64 decoding ServerToClientHandshake salt: %v", err)
+		return fmt.Errorf("decode ServerToClientHandshake salt: %w", err)
 	}
 
 	x, _ := pub.Curve.ScalarMult(pub.X, pub.Y, conn.privateKey.D.Bytes())
@@ -997,7 +997,7 @@ func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
 // of the connection, and spawns the player.
 func (conn *Conn) handleRequestChunkRadius(pk *packet.RequestChunkRadius) error {
 	if pk.ChunkRadius < 1 {
-		return fmt.Errorf("requested chunk radius must be at least 1, got %v", pk.ChunkRadius)
+		return fmt.Errorf("expected chunk radius of at least 1, got %v", pk.ChunkRadius)
 	}
 	conn.expect(packet.IDSetLocalPlayerAsInitialised)
 	radius := pk.ChunkRadius
@@ -1029,7 +1029,7 @@ func (conn *Conn) handleRequestChunkRadius(pk *packet.RequestChunkRadius) error 
 // radius of the connection.
 func (conn *Conn) handleChunkRadiusUpdated(pk *packet.ChunkRadiusUpdated) error {
 	if pk.ChunkRadius < 1 {
-		return fmt.Errorf("new chunk radius must be at least 1, got %v", pk.ChunkRadius)
+		return fmt.Errorf("expected chunk radius of at least 1, got %v", pk.ChunkRadius)
 	}
 	conn.expect(packet.IDPlayStatus)
 
@@ -1045,7 +1045,7 @@ func (conn *Conn) handleChunkRadiusUpdated(pk *packet.ChunkRadiusUpdated) error 
 // logged in.
 func (conn *Conn) handleSetLocalPlayerAsInitialised(pk *packet.SetLocalPlayerAsInitialised) error {
 	if pk.EntityRuntimeID != conn.gameData.EntityRuntimeID {
-		return fmt.Errorf("entity runtime ID mismatch: entity runtime ID in StartGame and SetLocalPlayerAsInitialised packets should be equal")
+		return fmt.Errorf("entity runtime ID mismatch: expected %v (from StartGame), got %v", conn.gameData.EntityRuntimeID, pk.EntityRuntimeID)
 	}
 	if conn.waitingForSpawn.CompareAndSwap(true, false) {
 		close(conn.spawn)
@@ -1059,7 +1059,7 @@ func (conn *Conn) handlePlayStatus(pk *packet.PlayStatus) error {
 	switch pk.Status {
 	case packet.PlayStatusLoginSuccess:
 		if err := conn.WritePacket(&packet.ClientCacheStatus{Enabled: conn.cacheEnabled}); err != nil {
-			return fmt.Errorf("error sending client cache status: %v", err)
+			return fmt.Errorf("send ClientCacheStatus: %w", err)
 		}
 		// The next packet we expect is the ResourcePacksInfo packet.
 		conn.expect(packet.IDResourcePacksInfo)
@@ -1094,7 +1094,7 @@ func (conn *Conn) handlePlayStatus(pk *packet.PlayStatus) error {
 		_ = conn.Close()
 		return fmt.Errorf("cannot join an editor game on vanilla")
 	default:
-		return fmt.Errorf("unknown play status in PlayStatus packet %v", pk.Status)
+		return fmt.Errorf("unknown play status %v", pk.Status)
 	}
 }
 
@@ -1125,7 +1125,7 @@ func (conn *Conn) enableEncryption(clientPublicKey *ecdsa.PublicKey) error {
 		return fmt.Errorf("compact serialise server JWT: %w", err)
 	}
 	if err := conn.WritePacket(&packet.ServerToClientHandshake{JWT: []byte(serverJWT)}); err != nil {
-		return fmt.Errorf("error sending ServerToClientHandshake packet: %v", err)
+		return fmt.Errorf("send ServerToClientHandshake: %w", err)
 	}
 	// Flush immediately as we'll enable encryption after this.
 	_ = conn.Flush()

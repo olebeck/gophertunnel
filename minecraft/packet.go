@@ -2,6 +2,7 @@ package minecraft
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net"
 
@@ -22,7 +23,7 @@ func parseData(data []byte, conn IConn, src, dst net.Addr) (*packetData, error) 
 	if err := header.Read(buf); err != nil {
 		// We don't return this as an error as it's not in the hand of the user to control this. Instead,
 		// we return to reading a new packet.
-		return nil, fmt.Errorf("error reading packet header: %v", err)
+		return nil, fmt.Errorf("read packet header: %w", err)
 	}
 	// The packet func was set, so we call it.
 	conn.PacketFunc(*header, buf.Bytes(), src, dst)
@@ -38,7 +39,7 @@ type unknownPacketError struct {
 }
 
 func (err unknownPacketError) Error() string {
-	return fmt.Sprintf("unexpected packet with ID %v", err.id)
+	return fmt.Sprintf("unexpected packet (ID=%v)", err.id)
 }
 
 func (p *packetData) Decode(conn IConn) (pks []packet.Packet, err error) {
@@ -49,12 +50,12 @@ func (p *packetData) Decode(conn IConn) (pks []packet.Packet, err error) {
 func (p *packetData) decode(conn IConn) (pks []packet.Packet, err error) {
 	defer func() {
 		if recoveredErr := recover(); recoveredErr != nil {
-			err = fmt.Errorf("packet %v: %w", p.h.PacketID, recoveredErr.(error))
+			err = fmt.Errorf("decode packet %v: %w", p.h.PacketID, recoveredErr.(error))
 		}
 		if err == nil {
 			return
 		}
-		if _, ok := err.(unknownPacketError); ok && conn.DisconnectOnUnknownPacket() {
+		if ok := errors.As(err, &unknownPacketError{}); ok && conn.DisconnectOnUnknownPacket() {
 			_ = conn.Close()
 		}
 	}()
@@ -75,7 +76,7 @@ func (p *packetData) decode(conn IConn) (pks []packet.Packet, err error) {
 	r := conn.Proto().NewReader(p.payload, conn.ShieldID(), false)
 	pk.Marshal(r)
 	if p.payload.Len() != 0 {
-		err = fmt.Errorf("%T: %v unread bytes left: 0x%x", pk, p.payload.Len(), p.payload.Bytes())
+		err = fmt.Errorf("decode packet %T: %v unread bytes left: 0x%x", pk, p.payload.Len(), p.payload.Bytes())
 	}
 	if conn.DisconnectOnInvalidPacket() && err != nil {
 		return nil, err
