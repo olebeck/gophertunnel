@@ -940,6 +940,7 @@ func (conn *Conn) startGame() {
 		BaseGameVersion:              data.BaseGameVersion,
 		GameVersion:                  protocol.CurrentVersion,
 		UseBlockNetworkIDHashes:      data.UseBlockNetworkIDHashes,
+		ServerAuthoritativeSound:     data.ServerAuthoritativeSound,
 	})
 	_ = conn.Flush()
 	conn.expect(packet.IDRequestChunkRadius, packet.IDSetLocalPlayerAsInitialised)
@@ -981,6 +982,7 @@ func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
 		ClientSideGeneration:         pk.ClientSideGeneration,
 		Experiments:                  pk.Experiments,
 		UseBlockNetworkIDHashes:      pk.UseBlockNetworkIDHashes,
+		ServerAuthoritativeSound:     pk.ServerAuthoritativeSound,
 	}
 	for _, item := range pk.Items {
 		if item.Name == "minecraft:shield" {

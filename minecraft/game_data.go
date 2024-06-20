@@ -108,4 +108,7 @@ type GameData struct {
 	// its index in the expected block palette. This is useful for servers that wish to support multiple protocol versions
 	// and custom blocks, but it will result in extra bytes being written for every block in a sub chunk palette.
 	UseBlockNetworkIDHashes bool
+
+	// ServerAuthoritativeSound ...
+	ServerAuthoritativeSound bool
 }
