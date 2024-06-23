@@ -59,7 +59,7 @@ type IConn interface {
 	Latency() time.Duration
 	LocalAddr() net.Addr
 	Read(b []byte) (n int, err error)
-	ReadPacket() (pk packet.Packet, err error)
+	ReadPacket() (pk packet.Packet, receivedAt time.Time, err error)
 	RemoteAddr() net.Addr
 	ResourcePacks() []*resource.Pack
 	SetDeadline(t time.Time) error
@@ -74,14 +74,7 @@ type IConn interface {
 	Expect(...uint32)
 	OnDisconnect() <-chan struct{}
 	SetLoggedIn()
-
-	Pool() packet.Pool
 	ShieldID() int32
-	Proto() Protocol
-	PacketFunc(header packet.Header, payload []byte, src, dst net.Addr)
-
-	DisconnectOnUnknownPacket() bool
-	DisconnectOnInvalidPacket() bool
 }
 
 // Conn represents a Minecraft (Bedrock Edition) connection over a specific net.Conn transport layer. Its
@@ -231,31 +224,12 @@ func (conn *Conn) SetLoggedIn() {
 	conn.loggedIn = true
 }
 
-func (conn *Conn) Pool() packet.Pool {
-	return conn.pool
-}
 func (conn *Conn) ShieldID() int32 {
 	return conn.shieldID.Load()
-}
-func (conn *Conn) Proto() Protocol {
-	return conn.proto
 }
 
 func (conn *Conn) OnDisconnect() <-chan struct{} {
 	return conn.close
-}
-
-func (conn *Conn) PacketFunc(header packet.Header, payload []byte, src, dst net.Addr) {
-	if conn.packetFunc != nil {
-		conn.packetFunc(header, payload, src, dst)
-	}
-}
-
-func (conn *Conn) DisconnectOnUnknownPacket() bool {
-	return conn.disconnectOnUnknownPacket
-}
-func (conn *Conn) DisconnectOnInvalidPacket() bool {
-	return conn.disconnectOnInvalidPacket
 }
 
 // IdentityData returns the identity data of the connection. It holds the UUID, XUID and username of the
@@ -415,9 +389,10 @@ func (conn *Conn) WritePacket(pk packet.Packet) error {
 //
 // If the packet read was not implemented, a *packet.Unknown is returned, containing the raw payload of the
 // packet read.
-func (conn *Conn) ReadPacket() (pk packet.Packet, err error) {
+func (conn *Conn) ReadPacket() (pk packet.Packet, receivedAt time.Time, err error) {
+	receivedAt = time.Now()
 	if len(conn.additional) > 0 {
-		return <-conn.additional, nil
+		return <-conn.additional, receivedAt, nil
 	}
 	if data, ok := conn.takeDeferredPacket(); ok {
 		pk, err := data.decode(conn)
@@ -431,14 +406,14 @@ func (conn *Conn) ReadPacket() (pk packet.Packet, err error) {
 		for _, additional := range pk[1:] {
 			conn.additional <- additional
 		}
-		return pk[0], nil
+		return pk[0], receivedAt, nil
 	}
 
 	select {
 	case <-conn.close:
-		return nil, conn.closeErr("read packet")
+		return nil, receivedAt, conn.closeErr("read packet")
 	case <-conn.readDeadline:
-		return nil, conn.wrap(context.DeadlineExceeded, "read packet")
+		return nil, receivedAt, conn.wrap(context.DeadlineExceeded, "read packet")
 	case data := <-conn.packets:
 		pk, err := data.decode(conn)
 		if err != nil {
@@ -451,7 +426,7 @@ func (conn *Conn) ReadPacket() (pk packet.Packet, err error) {
 		for _, additional := range pk[1:] {
 			conn.additional <- additional
 		}
-		return pk[0], nil
+		return pk[0], receivedAt, nil
 	}
 }
 
@@ -623,7 +598,7 @@ func (conn *Conn) deferPacket(pk *packetData) {
 // receive receives an incoming serialised packet from the underlying connection. If the connection is not yet
 // logged in, the packet is immediately handled.
 func (conn *Conn) receive(data []byte) error {
-	pkData, err := parseData(data, conn, conn.RemoteAddr(), conn.LocalAddr())
+	pkData, err := ParseData(data, conn.packetFunc, conn.RemoteAddr(), conn.LocalAddr())
 	if err != nil {
 		return err
 	}

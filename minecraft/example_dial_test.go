@@ -2,6 +2,7 @@ package minecraft_test
 
 import (
 	"fmt"
+
 	"github.com/sandertv/gophertunnel/minecraft"
 	"github.com/sandertv/gophertunnel/minecraft/auth"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
@@ -30,7 +31,7 @@ func ExampleDial() {
 	for {
 		// Read a packet from the connection: ReadPacket returns an error if the connection is closed or if
 		// a read timeout is set. You will generally want to return or break if this happens.
-		pk, err := conn.ReadPacket()
+		pk, _, err := conn.ReadPacket()
 		if err != nil {
 			break
 		}
