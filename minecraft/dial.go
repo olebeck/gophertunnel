@@ -132,7 +132,7 @@ func DialTimeout(network, address string, timeout time.Duration) (*Conn, error) 
 // DialContext uses a zero value of Dialer to initiate the connection.
 func DialContext(ctx context.Context, network, address string) (*Conn, error) {
 	var d Dialer
-	return d.DialContext(ctx, network, address)
+	return d.DialContext(ctx, network, address, time.Second*30)
 }
 
 // Dial dials a Minecraft connection to the address passed over the network passed. The network is typically
@@ -140,7 +140,7 @@ func DialContext(ctx context.Context, network, address string) (*Conn, error) {
 func (d Dialer) Dial(network, address string) (*Conn, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
-	return d.DialContext(ctx, network, address)
+	return d.DialContext(ctx, network, address, time.Second*30)
 }
 
 // DialTimeout dials a Minecraft connection to the address passed over the network passed. The network is
@@ -149,7 +149,7 @@ func (d Dialer) Dial(network, address string) (*Conn, error) {
 func (d Dialer) DialTimeout(network, address string, timeout time.Duration) (*Conn, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return d.DialContext(ctx, network, address)
+	return d.DialContext(ctx, network, address, timeout)
 }
 
 // CreateChain creates a chain for minecraft connection
@@ -167,7 +167,7 @@ func CreateChain(ctx context.Context, src oauth2.TokenSource) (key *ecdsa.Privat
 // DialContext dials a Minecraft connection to the address passed over the network passed. The network is
 // typically "raknet". A Conn is returned which may be used to receive packets from and send packets to.
 // If a connection is not established before the context passed is cancelled, DialContext returns an error.
-func (d Dialer) DialContext(ctx context.Context, network, address string) (conn *Conn, err error) {
+func (d Dialer) DialContext(ctx context.Context, network, address string, initialTimeout time.Duration) (conn *Conn, err error) {
 	if d.ErrorLog == nil {
 		d.ErrorLog = log.New(os.Stderr, "", log.LstdFlags)
 	}
@@ -183,19 +183,22 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		return nil, fmt.Errorf("dial: no network under id %v", network)
 	}
 
+	ctxt, cancel := context.WithTimeout(ctx, initialTimeout)
+	defer cancel()
+
 	var pong []byte
 	var netConn net.Conn
-	if pong, err = n.PingContext(ctx, address); err == nil {
-		netConn, err = n.DialContext(ctx, addressWithPongPort(pong, address))
+	if pong, err = n.PingContext(ctxt, address); err == nil {
+		netConn, err = n.DialContext(ctxt, addressWithPongPort(pong, address))
 	} else {
-		netConn, err = n.DialContext(ctx, address)
+		netConn, err = n.DialContext(ctxt, address)
 	}
 	if err != nil {
 		return nil, err
 	}
 
 	if d.ChainKey == nil || d.ChainData == "" {
-		d.ChainKey, d.ChainData, err = CreateChain(ctx, d.TokenSource)
+		d.ChainKey, d.ChainData, err = CreateChain(ctxt, d.TokenSource)
 		if err != nil {
 			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
 		}
