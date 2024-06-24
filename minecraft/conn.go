@@ -59,7 +59,8 @@ type IConn interface {
 	Latency() time.Duration
 	LocalAddr() net.Addr
 	Read(b []byte) (n int, err error)
-	ReadPacket() (pk packet.Packet, receivedAt time.Time, err error)
+	ReadPacket() (pk packet.Packet, err error)
+	ReadPacketWithTime() (pk packet.Packet, receivedAt time.Time, err error)
 	RemoteAddr() net.Addr
 	ResourcePacks() []*resource.Pack
 	SetDeadline(t time.Time) error
@@ -389,10 +390,9 @@ func (conn *Conn) WritePacket(pk packet.Packet) error {
 //
 // If the packet read was not implemented, a *packet.Unknown is returned, containing the raw payload of the
 // packet read.
-func (conn *Conn) ReadPacket() (pk packet.Packet, receivedAt time.Time, err error) {
-	receivedAt = time.Now()
+func (conn *Conn) ReadPacket() (pk packet.Packet, err error) {
 	if len(conn.additional) > 0 {
-		return <-conn.additional, receivedAt, nil
+		return <-conn.additional, nil
 	}
 	if data, ok := conn.takeDeferredPacket(); ok {
 		pk, err := data.decode(conn)
@@ -406,14 +406,14 @@ func (conn *Conn) ReadPacket() (pk packet.Packet, receivedAt time.Time, err erro
 		for _, additional := range pk[1:] {
 			conn.additional <- additional
 		}
-		return pk[0], receivedAt, nil
+		return pk[0], nil
 	}
 
 	select {
 	case <-conn.close:
-		return nil, receivedAt, conn.closeErr("read packet")
+		return nil, conn.closeErr("read packet")
 	case <-conn.readDeadline:
-		return nil, receivedAt, conn.wrap(context.DeadlineExceeded, "read packet")
+		return nil, conn.wrap(context.DeadlineExceeded, "read packet")
 	case data := <-conn.packets:
 		pk, err := data.decode(conn)
 		if err != nil {
@@ -426,8 +426,13 @@ func (conn *Conn) ReadPacket() (pk packet.Packet, receivedAt time.Time, err erro
 		for _, additional := range pk[1:] {
 			conn.additional <- additional
 		}
-		return pk[0], receivedAt, nil
+		return pk[0], nil
 	}
+}
+
+func (conn *Conn) ReadPacketWithTime() (pk packet.Packet, receivedAt time.Time, err error) {
+	pk, err = conn.ReadPacket()
+	return pk, time.Now(), err
 }
 
 // ResourcePacks returns a slice of all resource packs the connection holds. For a Conn obtained using a

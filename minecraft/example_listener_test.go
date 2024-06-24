@@ -44,7 +44,7 @@ func ExampleListen() {
 			for {
 				// Read a packet from the connection: ReadPacket returns an error if the connection is closed or if
 				// a read timeout is set. You will generally want to return or break if this happens.
-				pk, _, err := conn.ReadPacket()
+				pk, err := conn.ReadPacket()
 				if err != nil {
 					break
 				}
