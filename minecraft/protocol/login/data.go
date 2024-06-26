@@ -309,7 +309,7 @@ func (data ClientData) Validate() error {
 	}
 	// too short, add 0 prefix
 	if len(data.PlayFabID) != 16 {
-		data.PlayFabID = strings.Repeat("0", 16-len(data.PlayFabID))
+		data.PlayFabID = strings.Repeat("0", 16-len(data.PlayFabID)) + data.PlayFabID
 	}
 	if _, err := hex.DecodeString(data.PlayFabID); err != nil {
 		return fmt.Errorf("PlayFabID must be hex string, but got %v", data.PlayFabID)
