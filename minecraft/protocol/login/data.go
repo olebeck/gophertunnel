@@ -5,13 +5,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/sandertv/gophertunnel/minecraft/protocol"
-	"golang.org/x/text/language"
 	"net"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
+	"github.com/sandertv/gophertunnel/minecraft/protocol"
+	"golang.org/x/text/language"
 )
 
 // IdentityData contains identity data of the player logged in. It is found in one of the JWT claims signed
@@ -301,6 +302,14 @@ func (data ClientData) Validate() error {
 	}
 	if err := base64DecLength(data.CapeData, data.CapeImageHeight*data.CapeImageWidth*4); err != nil {
 		return fmt.Errorf("CapeData is invalid: %w", err)
+	}
+	// too long, cut
+	if len(data.PlayFabID) > 16 {
+		data.PlayFabID = data.PlayFabID[:16]
+	}
+	// too short, add 0 prefix
+	if len(data.PlayFabID) != 16 {
+		data.PlayFabID = strings.Repeat("0", 16-len(data.PlayFabID))
 	}
 	if _, err := hex.DecodeString(data.PlayFabID); err != nil {
 		return fmt.Errorf("PlayFabID must be hex string, but got %v", data.PlayFabID)
