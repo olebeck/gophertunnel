@@ -80,7 +80,7 @@ func handleConn(conn *minecraft.Conn, clientData chan login.ClientData, listener
 		defer listener.Disconnect(conn, "connection lost")
 		defer serverConn.Close()
 		for {
-			pk, _, err := conn.ReadPacket()
+			pk, err := conn.ReadPacket()
 			if err != nil {
 				return
 			}
@@ -97,7 +97,7 @@ func handleConn(conn *minecraft.Conn, clientData chan login.ClientData, listener
 		defer serverConn.Close()
 		defer listener.Disconnect(conn, "connection lost")
 		for {
-			pk, _, err := serverConn.ReadPacket()
+			pk, err := serverConn.ReadPacket()
 			if err != nil {
 				var disc minecraft.DisconnectError
 				if ok := errors.As(err, &disc); ok {
