@@ -29,9 +29,6 @@ type Pack struct {
 	// downloadURL is the URL that the resource pack can be downloaded from. If the string is empty, then the
 	// resource pack will be downloaded over RakNet rather than HTTP.
 	downloadURL string
-	// content is a bytes.Reader that contains the full content of the zip file. It is used to send the full
-	// data to a client.
-	content *bytes.Reader
 	// contentKey is the key used to encrypt the files. The client uses this to decrypt the resource pack if encrypted.
 	// If nothing is encrypted, this field can be left as an empty string.
 	contentKey string
@@ -43,6 +40,9 @@ type Pack struct {
 	icon image.Image
 
 	baseDir string
+
+	file *os.File
+	size int
 }
 
 // ReadPath compiles a resource pack found at the path passed. The resource pack must either be a zip archive
@@ -216,7 +216,7 @@ func (pack *Pack) Checksum() [32]byte {
 
 // Len returns the total length in bytes of the content of the archive that contained the resource pack.
 func (pack *Pack) Len() int {
-	return pack.content.Len()
+	return pack.size
 }
 
 // DataChunkCount returns the amount of chunks the data of the resource pack is split into if each chunk has
@@ -243,15 +243,28 @@ func (pack *Pack) ContentKey() string {
 // ReadAt reads len(b) bytes from the resource pack's archive data at offset off and copies it into b. The
 // amount of bytes read n is returned.
 func (pack *Pack) ReadAt(b []byte, off int64) (n int, err error) {
-	return pack.content.ReadAt(b, off)
+	return pack.file.ReadAt(b, off)
 }
 
+// WriteTo writes the packs zip data to the writer
 func (pack *Pack) WriteTo(w io.Writer) (n int64, err error) {
-	return pack.content.WriteTo(w)
-}
-
-func (pack *Pack) Seek(offset int64, whence int) (int64, error) {
-	return pack.content.Seek(offset, whence)
+	var buf = make([]byte, 0x1000)
+	off := int64(0)
+	for {
+		n, err := pack.file.ReadAt(buf, int64(off))
+		off += int64(n)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return off, err
+		}
+		_, err = w.Write(buf[:n])
+		if err != nil {
+			return off, err
+		}
+	}
+	return off, nil
 }
 
 // WithContentKey creates a copy of the pack and sets the encryption key to the key provided, after which the
@@ -275,6 +288,7 @@ func (pack *Pack) String() string {
 // compile compiles the resource pack found in path, either a zip archive or a directory, and returns a
 // resource pack if successful.
 func compile(path string) (*Pack, error) {
+	var f *os.File
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("open resource pack path: %w", err)
@@ -284,25 +298,24 @@ func compile(path string) (*Pack, error) {
 		if err != nil {
 			return nil, err
 		}
-		// We set the path to the temp zip archive we just made.
-		path = temp.Name()
-
-		// Make sure we close the temp file and remove it at the end. We don't need to keep it, as we read all
-		// the content in a byte slice.
-		_ = temp.Close()
 		defer func() {
 			_ = os.Remove(temp.Name())
 		}()
+		f = temp
+	} else {
+		f, err = os.Open(path)
+		if err != nil {
+			return nil, fmt.Errorf("open resource pack path: %w", err)
+		}
 	}
+	stat, _ := f.Stat()
+	fSize := stat.Size()
 
 	// open and check if its the outer zip
-	zr, err := zip.OpenReader(path)
+	zr, err := zip.NewReader(f, fSize)
 	if err != nil {
 		return nil, fmt.Errorf("error opening zip reader: %v", err)
 	}
-	defer func() {
-		_ = zr.Close()
-	}()
 
 	// if there is only 1 zip file open it and return it instead
 	if len(zr.File) == 1 && strings.HasSuffix(zr.File[0].Name, ".zip") {
@@ -318,22 +331,22 @@ func compile(path string) (*Pack, error) {
 	}
 
 	// First we read the manifest to ensure that it exists and is valid.
-	reader := packReader{ReadCloser: zr}
+	reader := packReader{Reader: zr}
 	manifest, icon, baseDir, err := reader.readManifest()
 	if err != nil {
 		return nil, fmt.Errorf("read manifest: %w", err)
 	}
 
-	// Then we read the entire content of the zip archive into a byte slice and compute the SHA256 checksum
-	// and a reader.
-	content, err := os.ReadFile(path)
+	h := sha256.New()
+	f.Seek(0, 0)
+	_, err = io.Copy(h, f)
 	if err != nil {
 		return nil, fmt.Errorf("read resource pack file content: %w", err)
 	}
-	checksum := sha256.Sum256(content)
-	contentReader := bytes.NewReader(content)
+	f.Seek(0, 0)
+	checksum := h.Sum(nil)
 
-	return &Pack{manifest: manifest, checksum: checksum, content: contentReader, icon: icon, baseDir: baseDir}, nil
+	return &Pack{manifest: manifest, checksum: [32]byte(checksum), icon: icon, baseDir: baseDir, file: f, size: int(fSize)}, nil
 }
 
 // createTempArchive creates a zip archive from the files in the path passed and writes it to a temporary
@@ -410,7 +423,7 @@ func createTempFile() (*os.File, error) {
 
 // packReader wraps around a zip.Reader to provide file finding functionality.
 type packReader struct {
-	*zip.ReadCloser
+	*zip.Reader
 }
 
 // find attempts to find a file in a zip reader. If found, it returns an Open()ed reader of the file that may
