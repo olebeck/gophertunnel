@@ -21,7 +21,7 @@ type ResourcePackHandler interface {
 	OnResourcePackChunkData(*packet.ResourcePackChunkData) error
 	OnResourcePackStack(*packet.ResourcePackStack) error
 	GetResourcePacksInfo(bool) *packet.ResourcePacksInfo
-	ResourcePacks() []*resource.Pack
+	ResourcePacks() []resource.Pack
 }
 
 type defaultResourcepackHandler struct {
@@ -31,14 +31,14 @@ type defaultResourcepackHandler struct {
 
 	// resourcePacks is a slice of resource packs that the listener may hold. Each client will be asked to
 	// download these resource packs upon joining.
-	resourcePacks []*resource.Pack
+	resourcePacks []resource.Pack
 
 	// ignoredResourcePacks is a slice of resource packs that are not being downloaded due to the downloadResourcePack
 	// func returning false for the specific pack.
 	ignoredResourcePacks []exemptedResourcePack
 }
 
-func (r *defaultResourcepackHandler) ResourcePacks() []*resource.Pack {
+func (r *defaultResourcepackHandler) ResourcePacks() []resource.Pack {
 	return r.resourcePacks
 }
 

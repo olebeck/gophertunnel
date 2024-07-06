@@ -3,6 +3,7 @@ package minecraft
 import (
 	"bytes"
 	"fmt"
+
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 	"github.com/sandertv/gophertunnel/minecraft/resource"
 )
@@ -10,9 +11,9 @@ import (
 // resourcePackQueue is used to aid in the handling of resource pack queueing and downloading. Only one
 // resource pack is downloaded at a time.
 type resourcePackQueue struct {
-	packs           []*resource.Pack
-	packsToDownload map[string]*resource.Pack
-	currentPack     *resource.Pack
+	packs           []resource.Pack
+	packsToDownload map[string]resource.Pack
+	currentPack     resource.Pack
 	currentOffset   uint64
 
 	packAmount       int
@@ -33,7 +34,7 @@ type downloadingPack struct {
 // Request 'requests' all resource packs passed, provided they all exist in the resourcePackQueue. If not,
 // an error is returned.
 func (queue *resourcePackQueue) Request(packs []string) error {
-	queue.packsToDownload = make(map[string]*resource.Pack)
+	queue.packsToDownload = make(map[string]resource.Pack)
 	for _, packUUID := range packs {
 		found := false
 		for _, pack := range queue.packs {

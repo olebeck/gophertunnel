@@ -67,7 +67,7 @@ type ListenConfig struct {
 	// download these resource packs upon joining.
 	// This field should not be edited during runtime of the Listener to avoid race conditions. Use
 	// Listener.AddResourcePack() to add a resource pack after having called Listener.Listen().
-	ResourcePacks []*resource.Pack
+	ResourcePacks []resource.Pack
 	// Biomes contains information about all biomes that the server has registered, which the client can use
 	// to render the world more effectively. If these are nil, the default biome definitions will be used.
 	Biomes map[string]any

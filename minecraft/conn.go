@@ -62,7 +62,7 @@ type IConn interface {
 	ReadPacket() (pk packet.Packet, err error)
 	ReadPacketWithTime() (pk packet.Packet, receivedAt time.Time, err error)
 	RemoteAddr() net.Addr
-	ResourcePacks() []*resource.Pack
+	ResourcePacks() []resource.Pack
 	SetDeadline(t time.Time) error
 	SetGameData(data GameData)
 	SetReadDeadline(t time.Time) error
@@ -438,7 +438,7 @@ func (conn *Conn) ReadPacketWithTime() (pk packet.Packet, receivedAt time.Time, 
 // ResourcePacks returns a slice of all resource packs the connection holds. For a Conn obtained using a
 // Listener, this holds all resource packs set to the Listener. For a Conn obtained using Dial, the resource
 // packs include all packs sent by the server connected to.
-func (conn *Conn) ResourcePacks() []*resource.Pack {
+func (conn *Conn) ResourcePacks() []resource.Pack {
 	return conn.ResourcePackHandler.ResourcePacks()
 }
 

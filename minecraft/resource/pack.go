@@ -9,19 +9,48 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/dlclark/regexp2"
 	"github.com/tailscale/hujson"
 )
 
+type Pack interface {
+	fmt.Stringer
+	io.ReaderAt
+	io.WriterTo
+	fs.FS
+
+	UUID() string
+	Version() string
+	Name() string
+	Checksum() [32]byte
+	Icon() image.Image
+	Modules() []Module
+	Description() string
+	Dependencies() []Dependency
+	BaseDir() string
+
+	WithContentKey(key string) Pack
+	HasBehaviours() bool
+	HasWorldTemplate() bool
+	HasTextures() bool
+	HasScripts() bool
+	Encrypted() bool
+	DownloadURL() string
+	ContentKey() string
+	Manifest() Manifest
+	Len() int
+	DataChunkCount(packChunkSize int) int
+}
+
 // Pack is a container of a resource pack parsed from a directory or a .zip archive (or .mcpack). It holds
 // methods that may be used to get information about the resource pack.
-type Pack struct {
+type pack struct {
 	// manifest is the manifest of the resource pack. It contains information about the pack such as the name,
 	// version and description.
 	manifest *Manifest
@@ -41,8 +70,10 @@ type Pack struct {
 
 	baseDir string
 
-	file *os.File
-	size int
+	zr *zip.Reader
+
+	reader io.ReaderAt
+	size   int
 }
 
 // ReadPath compiles a resource pack found at the path passed. The resource pack must either be a zip archive
@@ -50,14 +81,14 @@ type Pack struct {
 // case of a directory, the directory is compiled into an archive and the pack is parsed from that.
 // ReadPath operates assuming the resource pack has a 'manifest.json' file in it. If it does not, the function
 // will fail and return an error.
-func ReadPath(path string) (*Pack, error) {
+func ReadPath(path string) (Pack, error) {
 	return compile(path)
 }
 
 // ReadURL downloads a resource pack found at the URL passed and compiles it. The resource pack must be a valid
 // zip archive where the manifest.json file is inside a subdirectory rather than the root itself. If the resource
 // pack is not a valid zip or there is no manifest.json file, an error is returned.
-func ReadURL(url string) (*Pack, error) {
+func ReadURL(url string) (Pack, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("download resource pack: %w", err)
@@ -66,12 +97,12 @@ func ReadURL(url string) (*Pack, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download resource pack: %v (%d)", resp.Status, resp.StatusCode)
 	}
-	pack, err := Read(resp.Body)
+	pack_, err := Read(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	pack.downloadURL = url
-	return pack, nil
+	(pack_.(*pack)).downloadURL = url
+	return pack_, nil
 }
 
 // MustReadPath compiles a resource pack found at the path passed. The resource pack must either be a zip
@@ -80,7 +111,7 @@ func ReadURL(url string) (*Pack, error) {
 // ReadPath operates assuming the resource pack has a 'manifest.json' file in it. If it does not, the function
 // will fail and return an error.
 // Unlike ReadPath, MustReadPath does not return an error and panics if an error occurs instead.
-func MustReadPath(path string) *Pack {
+func MustReadPath(path string) Pack {
 	pack, err := compile(path)
 	if err != nil {
 		panic(err)
@@ -92,7 +123,7 @@ func MustReadPath(path string) *Pack {
 // zip archive where the manifest.json file is inside a subdirectory rather than the root itself. If the resource
 // pack is not a valid zip or there is no manifest.json file, an error is returned.
 // Unlike ReadURL, MustReadURL does not return an error and panics if an error occurs instead.
-func MustReadURL(url string) *Pack {
+func MustReadURL(url string) Pack {
 	pack, err := ReadURL(url)
 	if err != nil {
 		panic(err)
@@ -103,66 +134,65 @@ func MustReadURL(url string) *Pack {
 // Read parses an archived resource pack written to a raw byte slice passed. The data must be a valid
 // zip archive and contain a pack manifest in order for the function to succeed.
 // Read saves the data to a temporary archive.
-func Read(r io.Reader) (*Pack, error) {
+func Read(r io.Reader) (Pack, error) {
 	temp, err := createTempFile()
 	if err != nil {
 		return nil, fmt.Errorf("create temp zip archive: %w", err)
 	}
 	_, _ = io.Copy(temp, r)
-	if err := temp.Close(); err != nil {
-		return nil, fmt.Errorf("close temp zip archive: %w", err)
-	}
 	pack, parseErr := ReadPath(temp.Name())
-	if err := os.Remove(temp.Name()); err != nil {
-		return nil, fmt.Errorf("remove temp zip archive: %w", err)
-	}
 	return pack, parseErr
 }
 
-func (pack *Pack) Icon() image.Image {
+// FromReaderAt reads a Pack from this reader, this reader must not be closed for as long as the pack is used
+func FromReaderAt(r io.ReaderAt, size int64) (Pack, error) {
+	return compileReader(r, size)
+}
+
+func (pack *pack) Icon() image.Image {
 	return pack.icon
 }
 
 // Name returns the name of the resource pack.
-func (pack *Pack) Name() string {
+func (pack *pack) Name() string {
 	return pack.manifest.Header.Name
 }
 
 // UUID returns the UUID of the resource pack.
-func (pack *Pack) UUID() string {
+func (pack *pack) UUID() string {
 	return pack.manifest.Header.UUID
 }
 
 // Description returns the description of the resource pack.
-func (pack *Pack) Description() string {
+func (pack *pack) Description() string {
 	return pack.manifest.Header.Description
 }
 
 // Version returns the string version of the resource pack. It is guaranteed to have 3 digits in it, joined
 // by a dot.
-func (pack *Pack) Version() string {
+func (pack *pack) Version() string {
 	return strconv.Itoa(pack.manifest.Header.Version[0]) + "." + strconv.Itoa(pack.manifest.Header.Version[1]) + "." + strconv.Itoa(pack.manifest.Header.Version[2])
 }
 
 // Modules returns all modules that the resource pack exists out of. Resource packs usually have only one
 // module, but may have more depending on their functionality.
-func (pack *Pack) Modules() []Module {
+func (pack *pack) Modules() []Module {
 	return pack.manifest.Modules
 }
 
 // Dependencies returns all dependency resource packs that must be loaded in order for this resource pack to
 // function correctly.
-func (pack *Pack) Dependencies() []Dependency {
+func (pack *pack) Dependencies() []Dependency {
 	return pack.manifest.Dependencies
 }
 
-func (pack *Pack) BaseDir() string {
+func (pack *pack) BaseDir() string {
 	return pack.baseDir
 }
 
 // HasScripts checks if any of the modules of the resource pack have the type 'client_data', meaning they have
 // scripts in them.
-func (pack *Pack) HasScripts() bool {
+func (pack *pack) HasScripts() bool {
 	for _, module := range pack.manifest.Modules {
 		if module.Type == "client_data" {
 			// The module has the client_data type, meaning it holds client scripts.
@@ -174,7 +204,7 @@ func (pack *Pack) HasScripts() bool {
 
 // HasBehaviours checks if any of the modules of the resource pack have either the type 'data' or
 // 'client_data', meaning they contain behaviours (or scripts).
-func (pack *Pack) HasBehaviours() bool {
+func (pack *pack) HasBehaviours() bool {
 	for _, module := range pack.manifest.Modules {
 		if module.Type == "client_data" || module.Type == "data" {
 			// The module has the client_data or data type, meaning it holds behaviours.
@@ -186,7 +216,7 @@ func (pack *Pack) HasBehaviours() bool {
 
 // HasTextures checks if any of the modules of the resource pack have the type 'resources', meaning they have
 // textures in them.
-func (pack *Pack) HasTextures() bool {
+func (pack *pack) HasTextures() bool {
 	for _, module := range pack.manifest.Modules {
 		if module.Type == "resources" {
 			// The module has the resources type, meaning it holds textures.
@@ -198,30 +228,30 @@ func (pack *Pack) HasTextures() bool {
 
 // HasWorldTemplate checks if the resource compiled holds a level.dat in it, indicating that the resource is
 // a world template.
-func (pack *Pack) HasWorldTemplate() bool {
+func (pack *pack) HasWorldTemplate() bool {
 	return pack.manifest.worldTemplate
 }
 
 // DownloadURL returns the URL that the resource pack can be downloaded from. If the string is empty, then the
 // resource pack will be downloaded over RakNet rather than HTTP.
-func (pack *Pack) DownloadURL() string {
+func (pack *pack) DownloadURL() string {
 	return pack.downloadURL
 }
 
 // Checksum returns the SHA256 checksum made from the full, compressed content of the resource pack archive.
 // It is transmitted as a string over network.
-func (pack *Pack) Checksum() [32]byte {
+func (pack *pack) Checksum() [32]byte {
 	return pack.checksum
 }
 
 // Len returns the total length in bytes of the content of the archive that contained the resource pack.
-func (pack *Pack) Len() int {
+func (pack *pack) Len() int {
 	return pack.size
 }
 
 // DataChunkCount returns the amount of chunks the data of the resource pack is split into if each chunk has
 // a specific length.
-func (pack *Pack) DataChunkCount(length int) int {
+func (pack *pack) DataChunkCount(length int) int {
 	count := pack.Len() / length
 	if pack.Len()%length != 0 {
 		count++
@@ -230,28 +260,28 @@ func (pack *Pack) DataChunkCount(length int) int {
 }
 
 // Encrypted returns if the resource pack has been encrypted with a content key or not.
-func (pack *Pack) Encrypted() bool {
+func (pack *pack) Encrypted() bool {
 	return pack.contentKey != ""
 }
 
 // ContentKey returns the encryption key used to encrypt the resource pack. If the pack is not encrypted then
 // this can be empty.
-func (pack *Pack) ContentKey() string {
+func (pack *pack) ContentKey() string {
 	return pack.contentKey
 }
 
 // ReadAt reads len(b) bytes from the resource pack's archive data at offset off and copies it into b. The
 // amount of bytes read n is returned.
-func (pack *Pack) ReadAt(b []byte, off int64) (n int, err error) {
-	return pack.file.ReadAt(b, off)
+func (pack *pack) ReadAt(b []byte, off int64) (n int, err error) {
+	return pack.reader.ReadAt(b, off)
 }
 
 // WriteTo writes the packs zip data to the writer
-func (pack *Pack) WriteTo(w io.Writer) (n int64, err error) {
+func (pack *pack) WriteTo(w io.Writer) (n int64, err error) {
 	var buf = make([]byte, 0x1000)
 	off := int64(0)
 	for {
-		n, err := pack.file.ReadAt(buf, int64(off))
+		n, err := pack.reader.ReadAt(buf, int64(off))
 		off += int64(n)
 		if err != nil {
 			if err == io.EOF {
@@ -269,25 +299,29 @@ func (pack *Pack) WriteTo(w io.Writer) (n int64, err error) {
 
 // WithContentKey creates a copy of the pack and sets the encryption key to the key provided, after which the
 // new Pack is returned.
-func (pack Pack) WithContentKey(key string) *Pack {
+func (pack pack) WithContentKey(key string) Pack {
 	pack.contentKey = key
 	return &pack
 }
 
 // Manifest returns the manifest found in the manifest.json of the resource pack. It contains information
 // about the pack such as its name.
-func (pack *Pack) Manifest() Manifest {
+func (pack *pack) Manifest() Manifest {
 	return *pack.manifest
 }
 
 // String returns a readable representation of the resource pack. It implements the Stringer interface.
-func (pack *Pack) String() string {
+func (pack *pack) String() string {
 	return fmt.Sprintf("%v v%v (%v): %v", pack.Name(), pack.Version(), pack.UUID(), pack.Description())
+}
+
+func (pack *pack) Open(name string) (fs.File, error) {
+	return pack.zr.Open(name)
 }
 
 // compile compiles the resource pack found in path, either a zip archive or a directory, and returns a
 // resource pack if successful.
-func compile(path string) (*Pack, error) {
+func compile(path string) (*pack, error) {
 	var f *os.File
 	info, err := os.Stat(path)
 	if err != nil {
@@ -298,9 +332,6 @@ func compile(path string) (*Pack, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer func() {
-			_ = os.Remove(temp.Name())
-		}()
 		f = temp
 	} else {
 		f, err = os.Open(path)
@@ -311,23 +342,36 @@ func compile(path string) (*Pack, error) {
 	stat, _ := f.Stat()
 	fSize := stat.Size()
 
+	var r io.ReaderAt = f
 	// open and check if its the outer zip
 	zr, err := zip.NewReader(f, fSize)
 	if err != nil {
 		return nil, fmt.Errorf("error opening zip reader: %v", err)
 	}
-
 	// if there is only 1 zip file open it and return it instead
 	if len(zr.File) == 1 && strings.HasSuffix(zr.File[0].Name, ".zip") {
-		r, err := zr.File[0].Open()
+		zf, err := zr.File[0].Open()
 		if err != nil {
 			return nil, err
 		}
-		p, err := Read(r)
+		temp, err := createTempFile()
 		if err != nil {
 			return nil, err
 		}
-		return p, nil
+		size, err := io.Copy(temp, zf)
+		if err != nil {
+			return nil, err
+		}
+		r = temp
+		fSize = size
+	}
+	return compileReader(r, fSize)
+}
+
+func compileReader(r io.ReaderAt, fSize int64) (*pack, error) {
+	zr, err := zip.NewReader(r, fSize)
+	if err != nil {
+		return nil, fmt.Errorf("error opening zip reader: %v", err)
 	}
 
 	// First we read the manifest to ensure that it exists and is valid.
@@ -337,88 +381,23 @@ func compile(path string) (*Pack, error) {
 		return nil, fmt.Errorf("read manifest: %w", err)
 	}
 
+	pack := &pack{
+		manifest: manifest,
+		icon:     icon,
+		baseDir:  baseDir,
+		reader:   r,
+		size:     int(fSize),
+		zr:       zr,
+	}
+
 	h := sha256.New()
-	f.Seek(0, 0)
-	_, err = io.Copy(h, f)
+	_, err = pack.WriteTo(h)
 	if err != nil {
 		return nil, fmt.Errorf("read resource pack file content: %w", err)
 	}
-	f.Seek(0, 0)
-	checksum := h.Sum(nil)
+	pack.checksum = [32]byte(h.Sum(nil))
 
-	return &Pack{manifest: manifest, checksum: [32]byte(checksum), icon: icon, baseDir: baseDir, file: f, size: int(fSize)}, nil
-}
-
-// createTempArchive creates a zip archive from the files in the path passed and writes it to a temporary
-// file, which is returned when successful.
-func createTempArchive(path string) (*os.File, error) {
-	temp, err := createTempFile()
-	if err != nil {
-		return nil, err
-	}
-	writer := zip.NewWriter(temp)
-	if err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		relPath, err := filepath.Rel(path, filePath)
-		if err != nil {
-			return fmt.Errorf("find relative path: %w", err)
-		}
-		// Make sure to replace backslashes with forward slashes as Go zip only allows that.
-		relPath = strings.Replace(relPath, `\`, "/", -1)
-		// Always ignore '.' as it is not a real file/folder.
-		if relPath == "." {
-			return nil
-		}
-		s, err := os.Stat(filePath)
-		if err != nil {
-			return fmt.Errorf("read stat of file path %v: %w", filePath, err)
-		}
-		if s.IsDir() {
-			// This is a directory: Go zip requires you add forward slashes at the end to create directories.
-			_, _ = writer.Create(relPath + "/")
-			return nil
-		}
-		f, err := writer.Create(relPath)
-		if err != nil {
-			return fmt.Errorf("create new zip file: %w", err)
-		}
-		file, err := os.Open(filePath)
-		if err != nil {
-			return fmt.Errorf("open resource pack file %v: %w", filePath, err)
-		}
-		data, _ := io.ReadAll(file)
-		// Write the original content into the 'zip file' so that we write compressed data to the file.
-		if _, err := f.Write(data); err != nil {
-			return fmt.Errorf("write file data to zip: %w", err)
-		}
-		_ = file.Close()
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("build zip archive: %w", err)
-	}
-	_ = writer.Close()
-	return temp, nil
-}
-
-// createTempFile attempts to create a temporary file and returns it.
-func createTempFile() (*os.File, error) {
-	// We've got a directory which we need to load. Provided we need to send compressed zip data to the
-	// client, we compile it to a zip archive in a temporary file.
-
-	// Note that we explicitly do not handle the error here. If the user config
-	// dir cannot be found, 'dir' will be an empty string. os.CreateTemp will
-	// then use the default temporary file directory, which might succeed in
-	// this case.
-	dir, _ := os.UserConfigDir()
-	_ = os.MkdirAll(dir, os.ModePerm)
-
-	temp, err := os.CreateTemp(dir, "temp_resource_pack-*.mcpack")
-	if err != nil {
-		return nil, fmt.Errorf("create temp resource pack file: %w", err)
-	}
-	return temp, nil
+	return pack, nil
 }
 
 // packReader wraps around a zip.Reader to provide file finding functionality.
@@ -443,21 +422,6 @@ func (reader packReader) find(fileName string) (io.ReadCloser, string, error) {
 	return nil, "", fmt.Errorf("'%v' not found in zip", fileName)
 }
 
-func FixupInvalidJson(jsonString string) (fixedJsonString string) {
-	var err error
-	jsonString, err = regexp2.MustCompile(`(?:(?:\n\r)|(?:\r\n))\t*`, regexp2.None).Replace(string(jsonString), "", 0, -1)
-	if err != nil {
-		panic(err)
-	}
-
-	re := regexp2.MustCompile(`(?<=\[[^\]]*?,\s*)0+(?=\d{1,3}\s*,[^\]]*?\])`, regexp2.None)
-	s, err := re.Replace(string(jsonString), "", 0, -1)
-	if err != nil {
-		panic(err)
-	}
-	return s
-}
-
 func parseJson(s []byte, out any) error {
 	v, err := hujson.Parse(s)
 	if err != nil {
@@ -467,7 +431,7 @@ func parseJson(s []byte, out any) error {
 	}
 	v.Standardize()
 
-	d := json.NewDecoder(bytes.NewBuffer(v.Pack()))
+	d := json.NewDecoder(bytes.NewReader(v.Pack()))
 	err = d.Decode(&out)
 	if err != nil {
 		return err
