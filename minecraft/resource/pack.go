@@ -6,8 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"image"
-	"image/png"
 	"io"
 	"io/fs"
 	"net/http"
@@ -29,11 +27,11 @@ type Pack interface {
 	Version() string
 	Name() string
 	Checksum() [32]byte
-	Icon() image.Image
 	Modules() []Module
 	Description() string
 	Dependencies() []Dependency
 	BaseDir() string
+	CanRead() bool
 
 	WithContentKey(key string) Pack
 	HasBehaviours() bool
@@ -65,8 +63,6 @@ type pack struct {
 	// checksum is the SHA256 checksum of the full content of the file. It is sent to the client so that it
 	// can 'verify' the download.
 	checksum [32]byte
-
-	icon image.Image
 
 	baseDir string
 
@@ -151,8 +147,8 @@ func FromReaderAt(r io.ReaderAt, size int64) (Pack, error) {
 	return compileReader(r, size)
 }
 
-func (pack *pack) Icon() image.Image {
-	return pack.icon
+func (pack *pack) CanRead() bool {
+	return !pack.Encrypted()
 }
 
 // Name returns the name of the resource pack.
@@ -378,14 +374,13 @@ func compileReader(r io.ReaderAt, fSize int64) (*pack, error) {
 
 	// First we read the manifest to ensure that it exists and is valid.
 	reader := packReader{Reader: zr}
-	manifest, icon, baseDir, err := reader.readManifest()
+	manifest, baseDir, err := reader.readManifest()
 	if err != nil {
 		return nil, fmt.Errorf("read manifest: %w", err)
 	}
 
 	pack := &pack{
 		manifest: manifest,
-		icon:     icon,
 		baseDir:  baseDir,
 		reader:   r,
 		size:     int(fSize),
@@ -443,11 +438,11 @@ func parseJson(s []byte, out any) error {
 
 // readManifest reads the manifest from the resource pack located at the path passed. If not found in the root
 // of the resource pack, it will also attempt to find it deeper down into the archive.
-func (reader packReader) readManifest() (*Manifest, image.Image, string, error) {
+func (reader packReader) readManifest() (*Manifest, string, error) {
 	// Try to find the manifest file in the zip.
 	manifestFile, name, err := reader.find("manifest.json")
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("error loading manifest: %v", err)
+		return nil, "", fmt.Errorf("error loading manifest: %v", err)
 	}
 	baseDir := filepath.Dir(name)
 	defer func() {
@@ -457,13 +452,12 @@ func (reader packReader) readManifest() (*Manifest, image.Image, string, error) 
 	// Read all data from the manifest file so that we can decode it into a Manifest struct.
 	allData, err := io.ReadAll(manifestFile)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("error reading from manifest file: %v", err)
+		return nil, "", fmt.Errorf("error reading from manifest file: %v", err)
 	}
-	//allData = []byte(FixupInvalidJson(string(allData)))
 
 	manifest := Manifest{}
 	if err := parseJson(allData, &manifest); err != nil {
-		return nil, nil, "", fmt.Errorf("error decoding manifest JSON: %v (data: %v)", err, string(allData))
+		return nil, "", fmt.Errorf("error decoding manifest JSON: %v (data: %v)", err, string(allData))
 	}
 	manifest.Header.UUID = strings.ToLower(manifest.Header.UUID)
 
@@ -471,14 +465,5 @@ func (reader packReader) readManifest() (*Manifest, image.Image, string, error) 
 		manifest.worldTemplate = true
 	}
 
-	var icon image.Image
-	if iconFile, _, err := reader.find("pack_icon.png"); err == nil {
-		defer iconFile.Close()
-		icon, err = png.Decode(iconFile)
-		if err != nil {
-			fmt.Printf("Warn: error decoding pack icon %v\n", err)
-		}
-	}
-
-	return &manifest, icon, baseDir, nil
+	return &manifest, baseDir, nil
 }
