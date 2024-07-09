@@ -79,5 +79,9 @@ func createTempFile() (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create temp resource pack file: %w", err)
 	}
+	err = os.Remove(temp.Name())
+	if err != nil {
+		return nil, fmt.Errorf("remove temp resource pack file: %w", err)
+	}
 	return temp, nil
 }

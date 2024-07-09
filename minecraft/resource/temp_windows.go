@@ -10,9 +10,8 @@ import (
 )
 
 func createTemp(name string) (*os.File, error) {
-	const FILE_FLAG_DELETE_ON_CLOSE = 0x04000000
 	path, _ := syscall.UTF16PtrFromString(name)
-	hand, err := windows.CreateFile(path, syscall.GENERIC_READ|syscall.GENERIC_WRITE, syscall.FILE_SHARE_DELETE, nil, syscall.TRUNCATE_EXISTING, syscall.FILE_ATTRIBUTE_NORMAL|FILE_FLAG_DELETE_ON_CLOSE, 0)
+	hand, err := windows.CreateFile(path, syscall.GENERIC_READ|syscall.GENERIC_WRITE, syscall.FILE_SHARE_DELETE, nil, syscall.CREATE_NEW, syscall.FILE_ATTRIBUTE_NORMAL, 0)
 	if err != nil {
 		return nil, err
 	}

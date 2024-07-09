@@ -139,9 +139,11 @@ func Read(r io.Reader) (Pack, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create temp zip archive: %w", err)
 	}
-	_, _ = io.Copy(temp, r)
-	pack, parseErr := ReadPath(temp.Name())
-	return pack, parseErr
+	n, err := io.Copy(temp, r)
+	if err != nil {
+		return nil, fmt.Errorf("read pack: %w", err)
+	}
+	return compileReader(temp, n)
 }
 
 // FromReaderAt reads a Pack from this reader, this reader must not be closed for as long as the pack is used
