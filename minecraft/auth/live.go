@@ -15,9 +15,10 @@ import (
 )
 
 type MSAuthHandler interface {
+	// called with the url the user needs to go to, the code they need to enter
 	AuthCode(uri, code string)
-	Success()
-	PollError(err error) error
+	// called when the auth completes, regardless of success, non nil error = Success isnt called
+	Finished(err error)
 }
 
 type msAuthWriter struct {
@@ -25,15 +26,15 @@ type msAuthWriter struct {
 }
 
 func (m *msAuthWriter) AuthCode(uri, code string) {
-	_, _ = m.w.Write([]byte(fmt.Sprintf("Authenticate at %v using the code %v.\n", uri, code)))
+	fmt.Fprintf(m.w, "Authenticate at %v using the code %v.\n", uri, code)
 }
 
-func (m *msAuthWriter) Success() {
-	_, _ = m.w.Write([]byte("Authentication successful.\n"))
-}
-
-func (m *msAuthWriter) PollError(err error) error {
-	return fmt.Errorf("error polling for device auth: %w", err)
+func (m *msAuthWriter) Finished(err error) {
+	if err != nil {
+		fmt.Fprintf(m.w, "Failed to Authenticate: %s\n", err)
+	} else {
+		fmt.Fprint(m.w, "Authentication successful.\n")
+	}
 }
 
 // TokenSource holds an oauth2.TokenSource which uses device auth to get a code. The user authenticates using
@@ -103,6 +104,7 @@ func RequestLiveTokenWriter(ctx context.Context, h MSAuthHandler) (*oauth2.Token
 	}
 	d, err := startDeviceAuth()
 	if err != nil {
+		h.Finished(err)
 		return nil, err
 	}
 
@@ -116,15 +118,18 @@ func RequestLiveTokenWriter(ctx context.Context, h MSAuthHandler) (*oauth2.Token
 		case <-ticker.C:
 			t, err := pollDeviceAuth(d.DeviceCode)
 			if err != nil {
-				return nil, h.PollError(err)
+				err = fmt.Errorf("error polling for device auth: %w", err)
+				h.Finished(err)
+				return nil, err
 			}
 			// If the token could not be obtained yet (authentication wasn't finished yet), the token is nil.
 			// We just retry if this is the case.
 			if t != nil {
-				h.Success()
+				h.Finished(nil)
 				return t, nil
 			}
 		case <-ctx.Done():
+			h.Finished(ctx.Err())
 			return nil, ctx.Err()
 		}
 	}
