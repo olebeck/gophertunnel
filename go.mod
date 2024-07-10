@@ -12,7 +12,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.17.9
 	github.com/pelletier/go-toml v1.9.5
-	github.com/sandertv/go-raknet v1.14.0
+	github.com/sandertv/go-raknet v1.14.1
 	github.com/tailscale/hujson v0.0.0-20221223112325-20486734a56a
 	golang.org/x/net v0.26.0
 	golang.org/x/oauth2 v0.21.0
