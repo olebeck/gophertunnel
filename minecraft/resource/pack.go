@@ -281,18 +281,19 @@ func (pack *pack) WriteTo(w io.Writer) (n int64, err error) {
 	for {
 		n, err := pack.reader.ReadAt(buf, int64(off))
 		off += int64(n)
+		if n > 0 {
+			_, err = w.Write(buf[:n])
+			if err != nil {
+				return off, err
+			}
+		}
 		if err != nil {
 			if err == io.EOF {
-				break
+				return off, nil
 			}
 			return off, err
 		}
-		_, err = w.Write(buf[:n])
-		if err != nil {
-			return off, err
-		}
 	}
-	return off, nil
 }
 
 // WithContentKey creates a copy of the pack and sets the encryption key to the key provided, after which the
@@ -363,6 +364,7 @@ func compile(path string) (*pack, error) {
 		r = temp
 		fSize = size
 	}
+	f.Seek(0, 0)
 	return compileReader(r, fSize)
 }
 
