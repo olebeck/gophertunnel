@@ -223,7 +223,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 	defaultClientData(address, conn.identityData.DisplayName, &conn.clientData)
 
 	var request []byte
-	if d.TokenSource == nil {
+	if d.ChainKey == nil {
 		// We haven't logged into the user's XBL account. We create a login request with only one token
 		// holding the identity data set in the Dialer after making sure we clear data from the identity data
 		// that is only present when logged in.
