@@ -162,7 +162,7 @@ type Conn struct {
 
 	// packetFunc is an optional function passed to a Dial() call. If set, each packet read from and written
 	// to this connection will call this function.
-	packetFunc func(header packet.Header, payload []byte, src, dst net.Addr)
+	packetFunc func(header packet.Header, payload []byte, src, dst net.Addr, timeReceived time.Time)
 
 	disconnectMessage atomic.Pointer[string]
 
@@ -377,7 +377,7 @@ func (conn *Conn) WritePacket(pk packet.Packet) error {
 		converted.Marshal(conn.proto.NewWriter(buf, conn.shieldID.Load()))
 
 		if conn.packetFunc != nil {
-			conn.packetFunc(*conn.hdr, buf.Bytes()[l:], conn.LocalAddr(), conn.RemoteAddr())
+			conn.packetFunc(*conn.hdr, buf.Bytes()[l:], conn.LocalAddr(), conn.RemoteAddr(), time.Now())
 		}
 		conn.bufferedSend = append(conn.bufferedSend, append([]byte(nil), buf.Bytes()...))
 	}
@@ -603,7 +603,9 @@ func (conn *Conn) deferPacket(pk *packetData) {
 // receive receives an incoming serialised packet from the underlying connection. If the connection is not yet
 // logged in, the packet is immediately handled.
 func (conn *Conn) receive(data []byte) error {
-	pkData, err := ParseData(data, conn.packetFunc, conn.RemoteAddr(), conn.LocalAddr())
+	pkData, err := ParseData(data, func(header packet.Header, payload []byte) {
+		conn.packetFunc(header, payload, conn.RemoteAddr(), conn.LocalAddr(), time.Now())
+	})
 	if err != nil {
 		return err
 	}

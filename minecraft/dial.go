@@ -58,7 +58,7 @@ type Dialer struct {
 	// Dialer.Dial(). It includes packets that are otherwise covered in the connection sequence, such as the
 	// Login packet. The function is called with the header of the packet and its raw payload, the address
 	// from which the packet originated, and the destination address.
-	PacketFunc func(header packet.Header, payload []byte, src, dst net.Addr)
+	PacketFunc func(header packet.Header, payload []byte, src, dst net.Addr, timeReceived time.Time)
 
 	// DownloadResourcePack is called individually for every texture and behaviour pack sent by the connection when
 	// using Dialer.Dial(), and can be used to stop the pack from being downloaded. The function is called with the UUID

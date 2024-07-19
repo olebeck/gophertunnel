@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"os"
@@ -20,7 +21,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	src := auth.RefreshTokenSource(token)
+	src := auth.RefreshTokenSource(token, context.Background(), nil)
 
 	p, err := minecraft.NewForeignStatusProvider(config.Connection.RemoteAddress)
 	if err != nil {

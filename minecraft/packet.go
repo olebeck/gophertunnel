@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"net"
 
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 )
@@ -17,7 +16,7 @@ type packetData struct {
 }
 
 // ParseData parses the packet data slice passed into a packetData struct.
-func ParseData(data []byte, PacketFunc func(header packet.Header, payload []byte, src, dst net.Addr), src, dst net.Addr) (*packetData, error) {
+func ParseData(data []byte, PacketFunc func(header packet.Header, payload []byte)) (*packetData, error) {
 	buf := bytes.NewBuffer(data)
 	header := &packet.Header{}
 	if err := header.Read(buf); err != nil {
@@ -27,7 +26,7 @@ func ParseData(data []byte, PacketFunc func(header packet.Header, payload []byte
 	}
 	// The packet func was set, so we call it.
 	if PacketFunc != nil {
-		PacketFunc(*header, buf.Bytes(), src, dst)
+		PacketFunc(*header, buf.Bytes())
 	}
 	return &packetData{h: header, full: data, payload: buf}, nil
 }

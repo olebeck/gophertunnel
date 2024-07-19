@@ -79,7 +79,7 @@ type ListenConfig struct {
 	// Listener.Accept. It includes packets that are otherwise covered in the connection sequence, such as the
 	// Login packet. The function is called with the header of the packet and its raw payload, the address
 	// from which the packet originated, and the destination address.
-	PacketFunc func(header packet.Header, payload []byte, src, dst net.Addr)
+	PacketFunc func(header packet.Header, payload []byte, src, dst net.Addr, timeReceived time.Time)
 
 	EarlyConnHandler func(*Conn)
 	OnClientData     func(*Conn)
