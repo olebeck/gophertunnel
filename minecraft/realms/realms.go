@@ -13,20 +13,23 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var RealmsAPIBase = "https://pocket.realms.minecraft.net/"
-
 // Client is an instance of the realms api with a token.
 type Client struct {
 	ClientVersion string
 	tokenSrc      oauth2.TokenSource
 	xblToken      *auth.XBLToken
+	baseUrl       string
 }
 
 // NewClient returns a new Client instance with the supplied token source for authentication.
-func NewClient(src oauth2.TokenSource) *Client {
+func NewClient(src oauth2.TokenSource, baseUrl string) *Client {
+	if baseUrl == "" {
+		baseUrl = "https://pocket.realms.minecraft.net/"
+	}
 	return &Client{
 		tokenSrc:      src,
 		ClientVersion: protocol.CurrentVersion,
+		baseUrl:       baseUrl,
 	}
 }
 
@@ -174,7 +177,7 @@ func (c *Client) XboxToken(ctx context.Context) (*auth.XBLToken, error) {
 		return nil, err
 	}
 
-	c.xblToken, err = auth.RequestXBLToken(ctx, t, RealmsAPIBase)
+	c.xblToken, err = auth.RequestXBLToken(ctx, t, c.baseUrl)
 	return c.xblToken, err
 }
 
@@ -188,7 +191,7 @@ func (c *Client) RequestWithMethod(ctx context.Context, path string, method stri
 	if string(path[0]) == "/" {
 		path = path[1:]
 	}
-	url := fmt.Sprintf("%s%s", RealmsAPIBase, path)
+	url := fmt.Sprintf("%s%s", c.baseUrl, path)
 	req, err := http.NewRequest(method, url, ReqBody)
 	if err != nil {
 		return nil, err
