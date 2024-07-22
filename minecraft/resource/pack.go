@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/tailscale/hujson"
 )
@@ -60,16 +61,15 @@ type pack struct {
 	// If nothing is encrypted, this field can be left as an empty string.
 	contentKey string
 
+	baseDir string
+	fs      fs.FS
+
+	createZip func() error
+	reader    io.ReaderAt
+	size      int
 	// checksum is the SHA256 checksum of the full content of the file. It is sent to the client so that it
 	// can 'verify' the download.
 	checksum [32]byte
-
-	baseDir string
-
-	zr *zip.Reader
-
-	reader io.ReaderAt
-	size   int
 }
 
 // ReadPath compiles a resource pack found at the path passed. The resource pack must either be a zip archive
@@ -239,11 +239,13 @@ func (pack *pack) DownloadURL() string {
 // Checksum returns the SHA256 checksum made from the full, compressed content of the resource pack archive.
 // It is transmitted as a string over network.
 func (pack *pack) Checksum() [32]byte {
+	pack.createZip()
 	return pack.checksum
 }
 
 // Len returns the total length in bytes of the content of the archive that contained the resource pack.
 func (pack *pack) Len() int {
+	pack.createZip()
 	return pack.size
 }
 
@@ -271,6 +273,11 @@ func (pack *pack) ContentKey() string {
 // ReadAt reads len(b) bytes from the resource pack's archive data at offset off and copies it into b. The
 // amount of bytes read n is returned.
 func (pack *pack) ReadAt(b []byte, off int64) (n int, err error) {
+	err = pack.createZip()
+	if err != nil {
+		return 0, err
+	}
+
 	return pack.reader.ReadAt(b, off)
 }
 
@@ -279,7 +286,7 @@ func (pack *pack) WriteTo(w io.Writer) (n int64, err error) {
 	var buf = make([]byte, 0x1000)
 	off := int64(0)
 	for {
-		n, err := pack.reader.ReadAt(buf, int64(off))
+		n, err := pack.ReadAt(buf, int64(off))
 		off += int64(n)
 		if n > 0 {
 			_, err = w.Write(buf[:n])
@@ -315,57 +322,27 @@ func (pack *pack) String() string {
 }
 
 func (pack *pack) Open(name string) (fs.File, error) {
-	return pack.zr.Open(name)
+	return pack.fs.Open(name)
 }
 
 // compile compiles the resource pack found in path, either a zip archive or a directory, and returns a
 // resource pack if successful.
 func compile(path string) (*pack, error) {
-	var f *os.File
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil, fmt.Errorf("open resource pack path: %w", err)
 	}
 	if info.IsDir() {
-		temp, err := createTempArchive(path)
-		if err != nil {
-			return nil, err
-		}
-		f = temp
-	} else {
-		f, err = os.Open(path)
-		if err != nil {
-			return nil, fmt.Errorf("open resource pack path: %w", err)
-		}
+		return compileFS(os.DirFS(path))
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open resource pack path: %w", err)
 	}
 	stat, _ := f.Stat()
 	fSize := stat.Size()
-
-	var r io.ReaderAt = f
-	// open and check if its the outer zip
-	zr, err := zip.NewReader(f, fSize)
-	if err != nil {
-		return nil, fmt.Errorf("error opening zip reader: %v", err)
-	}
-	// if there is only 1 zip file open it and return it instead
-	if len(zr.File) == 1 && strings.HasSuffix(zr.File[0].Name, ".zip") {
-		zf, err := zr.File[0].Open()
-		if err != nil {
-			return nil, err
-		}
-		temp, err := createTempFile()
-		if err != nil {
-			return nil, err
-		}
-		size, err := io.Copy(temp, zf)
-		if err != nil {
-			return nil, err
-		}
-		r = temp
-		fSize = size
-	}
-	f.Seek(0, 0)
-	return compileReader(r, fSize)
+	return compileReader(f, fSize)
 }
 
 func compileReader(r io.ReaderAt, fSize int64) (*pack, error) {
@@ -374,8 +351,54 @@ func compileReader(r io.ReaderAt, fSize int64) (*pack, error) {
 		return nil, fmt.Errorf("error opening zip reader: %v", err)
 	}
 
+	// if there is only 1 zip file open it and return it instead
+	if len(zr.File) == 1 && strings.HasSuffix(zr.File[0].Name, ".zip") {
+		zrf := zr.File[0]
+		if zrf.Method == zip.Store {
+			offset, err := zrf.DataOffset()
+			if err != nil {
+				return nil, err
+			}
+			return compileReader(io.NewSectionReader(r, offset, int64(zrf.CompressedSize64)), int64(zrf.CompressedSize64))
+		} else {
+			zf, err := zrf.Open()
+			if err != nil {
+				return nil, err
+			}
+			defer zf.Close()
+			temp, err := createTempFile()
+			if err != nil {
+				return nil, err
+			}
+			size, err := io.Copy(temp, zf)
+			if err != nil {
+				return nil, err
+			}
+			return compileReader(temp, size)
+		}
+	}
+
+	pack, err := compileFS(zr)
+	if err != nil {
+		return nil, err
+	}
+
+	pack.createZip = func() error { return nil }
+	pack.reader = r
+	pack.size = int(fSize)
+
+	h := sha256.New()
+	_, err = pack.WriteTo(h)
+	if err != nil {
+		return nil, fmt.Errorf("read resource pack file content: %w", err)
+	}
+	pack.checksum = [32]byte(h.Sum(nil))
+	return pack, nil
+}
+
+func compileFS(fs fs.FS) (*pack, error) {
 	// First we read the manifest to ensure that it exists and is valid.
-	reader := packReader{Reader: zr}
+	reader := packReader{fs: fs}
 	manifest, baseDir, err := reader.readManifest()
 	if err != nil {
 		return nil, fmt.Errorf("read manifest: %w", err)
@@ -384,41 +407,44 @@ func compileReader(r io.ReaderAt, fSize int64) (*pack, error) {
 	pack := &pack{
 		manifest: manifest,
 		baseDir:  baseDir,
-		reader:   r,
-		size:     int(fSize),
-		zr:       zr,
+		fs:       fs,
 	}
-
-	h := sha256.New()
-	_, err = pack.WriteTo(h)
-	if err != nil {
-		return nil, fmt.Errorf("read resource pack file content: %w", err)
-	}
-	pack.checksum = [32]byte(h.Sum(nil))
+	pack.createZip = sync.OnceValue(func() (err error) {
+		pack.reader, pack.size, pack.checksum, err = createTempArchive(fs)
+		return err
+	})
 
 	return pack, nil
 }
 
 // packReader wraps around a zip.Reader to provide file finding functionality.
 type packReader struct {
-	*zip.Reader
+	fs fs.FS
 }
 
 // find attempts to find a file in a zip reader. If found, it returns an Open()ed reader of the file that may
 // be used to read data from the file.
 func (reader packReader) find(fileName string) (io.ReadCloser, string, error) {
-	for _, file := range reader.File {
-		base := filepath.Base(file.Name)
-		if file.Name != fileName && base != fileName {
-			continue
-		}
-		fileReader, err := file.Open()
-		if err != nil {
-			return nil, "", fmt.Errorf("open zip file %v: %w", file.Name, err)
-		}
-		return fileReader, file.Name, nil
+	fileReader, err := reader.fs.Open(fileName)
+	if err == nil {
+		return fileReader, fileName, nil
 	}
-	return nil, "", fmt.Errorf("'%v' not found in zip", fileName)
+
+	fileNames, err := fs.Glob(reader.fs, "*/"+fileName)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if len(fileNames) == 0 {
+		return nil, "", fmt.Errorf("'%v' not found in zip", fileName)
+	}
+
+	fileName = fileNames[0]
+	fileReader, err = reader.fs.Open(fileName)
+	if err != nil {
+		return nil, "", err
+	}
+	return fileReader, fileName, nil
 }
 
 func parseJson(s []byte, out any) error {

@@ -2,65 +2,68 @@ package resource
 
 import (
 	"archive/zip"
+	"crypto/sha256"
 	"fmt"
 	"io"
+	"io/fs"
 	"math/rand"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
+type countWriter struct {
+	count int
+}
+
+func (cw *countWriter) Write(p []byte) (n int, err error) {
+	cw.count += len(p)
+	return len(p), nil
+}
+
 // createTempArchive creates a zip archive from the files in the path passed and writes it to a temporary
 // file, which is returned when successful.
-func createTempArchive(path string) (*os.File, error) {
+func createTempArchive(filesystem fs.FS) (*os.File, int, [32]byte, error) {
 	temp, err := createTempFile()
 	if err != nil {
-		return nil, err
+		return nil, 0, [32]byte{}, err
 	}
-	writer := zip.NewWriter(temp)
-	if err := filepath.Walk(path, func(filePath string, info os.FileInfo, err error) error {
+	h := sha256.New()
+	cw := &countWriter{}
+	writer := zip.NewWriter(io.MultiWriter(temp, h, cw))
+	if err := fs.WalkDir(filesystem, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		relPath, err := filepath.Rel(path, filePath)
-		if err != nil {
-			return fmt.Errorf("find relative path: %w", err)
-		}
 		// Make sure to replace backslashes with forward slashes as Go zip only allows that.
-		relPath = strings.Replace(relPath, `\`, "/", -1)
+		path = strings.Replace(path, `\`, "/", -1)
 		// Always ignore '.' as it is not a real file/folder.
-		if relPath == "." {
+		if path == "." {
 			return nil
 		}
-		s, err := os.Stat(filePath)
-		if err != nil {
-			return fmt.Errorf("read stat of file path %v: %w", filePath, err)
-		}
-		if s.IsDir() {
+		if d.IsDir() {
 			// This is a directory: Go zip requires you add forward slashes at the end to create directories.
-			_, _ = writer.Create(relPath + "/")
+			_, _ = writer.Create(path + "/")
 			return nil
 		}
-		f, err := writer.Create(relPath)
+		f, err := writer.Create(path)
 		if err != nil {
 			return fmt.Errorf("create new zip file: %w", err)
 		}
-		file, err := os.Open(filePath)
+		file, err := filesystem.Open(path)
 		if err != nil {
-			return fmt.Errorf("open resource pack file %v: %w", filePath, err)
+			return fmt.Errorf("open resource pack file %v: %w", path, err)
 		}
-		data, _ := io.ReadAll(file)
 		// Write the original content into the 'zip file' so that we write compressed data to the file.
-		if _, err := f.Write(data); err != nil {
+		if _, err := io.Copy(f, file); err != nil {
 			return fmt.Errorf("write file data to zip: %w", err)
 		}
 		_ = file.Close()
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("build zip archive: %w", err)
+		return nil, 0, [32]byte{}, fmt.Errorf("build zip archive: %w", err)
 	}
 	_ = writer.Close()
-	return temp, nil
+	return temp, cw.count, [32]byte(h.Sum(nil)), nil
 }
 
 // createTempFile attempts to create a temporary file and returns it.
