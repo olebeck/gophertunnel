@@ -396,21 +396,29 @@ func compileReader(r io.ReaderAt, fSize int64) (*pack, error) {
 	return pack, nil
 }
 
-func compileFS(fs fs.FS) (*pack, error) {
+func compileFS(fsys fs.FS) (*pack, error) {
 	// First we read the manifest to ensure that it exists and is valid.
-	reader := packReader{fs: fs}
+	reader := packReader{fs: fsys}
 	manifest, baseDir, err := reader.readManifest()
 	if err != nil {
 		return nil, fmt.Errorf("read manifest: %w", err)
 	}
 
+	var fsys2 = fsys
+	if baseDir != "." {
+		fsys2, err = fs.Sub(fsys, baseDir)
+		if err != nil {
+			return nil, fmt.Errorf("fs sub: %w", err)
+		}
+	}
+
 	pack := &pack{
 		manifest: manifest,
 		baseDir:  baseDir,
-		fs:       fs,
+		fs:       fsys2,
 	}
 	pack.createZip = sync.OnceValue(func() (err error) {
-		pack.reader, pack.size, pack.checksum, err = createTempArchive(fs)
+		pack.reader, pack.size, pack.checksum, err = createTempArchive(fsys)
 		return err
 	})
 
