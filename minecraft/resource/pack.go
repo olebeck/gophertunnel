@@ -84,8 +84,8 @@ func ReadPath(path string) (Pack, error) {
 // ReadURL downloads a resource pack found at the URL passed and compiles it. The resource pack must be a valid
 // zip archive where the manifest.json file is inside a subdirectory rather than the root itself. If the resource
 // pack is not a valid zip or there is no manifest.json file, an error is returned.
-func ReadURL(url string) (Pack, error) {
-	resp, err := http.Get(url)
+func ReadURL(client *http.Client, url string) (Pack, error) {
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("download resource pack: %w", err)
 	}
@@ -120,7 +120,7 @@ func MustReadPath(path string) Pack {
 // pack is not a valid zip or there is no manifest.json file, an error is returned.
 // Unlike ReadURL, MustReadURL does not return an error and panics if an error occurs instead.
 func MustReadURL(url string) Pack {
-	pack, err := ReadURL(url)
+	pack, err := ReadURL(http.DefaultClient, url)
 	if err != nil {
 		panic(err)
 	}
