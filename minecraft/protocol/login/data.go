@@ -2,7 +2,6 @@ package login
 
 import (
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -148,8 +147,9 @@ type ClientData struct {
 	// PlayFabID is the PlayFab ID produced for the player's skin. PlayFab is
 	// the company that hosts the Marketplace, skins and other related features
 	// from the game. This ID is the ID of the skin used to store the skin
-	// inside of PlayFab. PlayFabID is a hex encoded string, usually consisting
-	// of 16 characters.
+	// inside of PlayFab. PlayFabID is a semi-hex encoded string, usually consisting
+	// of 16 characters. That said, this is not always valid hex, because the last
+	// character may be omitted.
 	PlayFabID string `json:"PlayFabId"`
 	// SkinImageHeight and SkinImageWidth are the dimensions of the skin's image data.
 	SkinImageHeight, SkinImageWidth int
@@ -303,16 +303,10 @@ func (data ClientData) Validate() error {
 	if err := base64DecLength(data.CapeData, data.CapeImageHeight*data.CapeImageWidth*4); err != nil {
 		return fmt.Errorf("CapeData is invalid: %w", err)
 	}
-	// too long, cut
-	if len(data.PlayFabID) > 16 {
-		data.PlayFabID = data.PlayFabID[:16]
-	}
-	// too short, add 0 prefix
-	if len(data.PlayFabID) != 16 {
-		data.PlayFabID = strings.Repeat("0", 16-len(data.PlayFabID)) + data.PlayFabID
-	}
-	if _, err := hex.DecodeString(data.PlayFabID); err != nil {
-		return fmt.Errorf("PlayFabID must be hex string, but got %v", data.PlayFabID)
+	for _, s := range data.PlayFabID {
+		if (s < '0' || s > '9') && (s < 'a' || s > 'f') {
+			return fmt.Errorf("PlayFabID must consist of hex characters, got %v", data.PlayFabID)
+		}
 	}
 	for _, anim := range data.AnimatedImageData {
 		if err := base64DecLength(anim.Image, anim.ImageHeight*anim.ImageWidth*4); err != nil {
