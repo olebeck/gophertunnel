@@ -33,9 +33,9 @@ type Header struct {
 	// UUID is a unique identifier identifier this pack from any other pack.
 	UUID string `json:"uuid"`
 	// Version is the version of the pack, which can be used to identify changes in the pack.
-	Version [3]int `json:"version"`
+	Version Version `json:"version"`
 	// MinimumGameVersion is the minimum version of the game that this resource pack was written for.
-	MinimumGameVersion [3]int `json:"min_engine_version"`
+	MinimumGameVersion Version `json:"min_engine_version"`
 }
 
 // Module describes a module that comprises the pack. Each module defines one of the kinds of contents of the
@@ -51,7 +51,7 @@ type Module struct {
 	Type string `json:"type"`
 	// Version is the version of the module in the same format as the pack's version in the header. This can
 	// be used to further identify changes in the pack.
-	Version [3]int `json:"version"`
+	Version Version `json:"version"`
 }
 
 // Dependency describes a pack that this pack depends on in order to work.
@@ -61,13 +61,14 @@ type Dependency struct {
 	UUID string `json:"uuid"`
 	// Version is the specific version of the pack that the pack depends on. Should match the version the
 	// other pack has in its manifest file.
-	Version [3]int `json:"version"`
+	Version Version `json:"version"`
 }
 
 // Capability is a particular feature that the pack utilises of that isn't necessarily enabled by default.
-//   experimental_custom_ui: Allows HTML files in the pack to be used for custom UI, and scripts in the pack
-//                           to call and manipulate custom UI.
-//   chemistry:              Allows the pack to add, change or replace Chemistry functionality.
+//
+//	experimental_custom_ui: Allows HTML files in the pack to be used for custom UI, and scripts in the pack
+//	                        to call and manipulate custom UI.
+//	chemistry:              Allows the pack to add, change or replace Chemistry functionality.
 type Capability string
 
 // Metadata contains additional information about the pack that is otherwise optional.

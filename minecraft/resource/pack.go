@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -169,7 +168,7 @@ func (pack *pack) Description() string {
 // Version returns the string version of the resource pack. It is guaranteed to have 3 digits in it, joined
 // by a dot.
 func (pack *pack) Version() string {
-	return strconv.Itoa(pack.manifest.Header.Version[0]) + "." + strconv.Itoa(pack.manifest.Header.Version[1]) + "." + strconv.Itoa(pack.manifest.Header.Version[2])
+	return pack.manifest.Header.Version.String()
 }
 
 // Modules returns all modules that the resource pack exists out of. Resource packs usually have only one
