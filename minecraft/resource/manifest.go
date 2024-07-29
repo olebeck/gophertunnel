@@ -19,6 +19,11 @@ type Manifest struct {
 	// default. For a list of options, see below.
 	Capabilities []Capability `json:"capabilities,omitempty"`
 
+	// Subpacks are different tiers of assets contained in this pack.
+	Subpacks []Subpack `json:"subpacks,omitempty"`
+
+	Settings []Setting `json:"settings,omitempty"`
+
 	// worldTemplate holds a value indicating if the pack holds an entire world template or not.
 	worldTemplate bool
 }
@@ -70,6 +75,17 @@ type Dependency struct {
 //	                        to call and manipulate custom UI.
 //	chemistry:              Allows the pack to add, change or replace Chemistry functionality.
 type Capability string
+
+type Subpack struct {
+	FolderName string `json:"folder_name"`
+	Name       string `json:"name"`
+	MemoryTier int    `json:"memory_tier"`
+}
+
+type Setting struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
 
 // Metadata contains additional information about the pack that is otherwise optional.
 type Metadata struct {
