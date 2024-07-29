@@ -8,6 +8,7 @@ import (
 func TestVersion(t *testing.T) {
 	var tests = []string{
 		`"1.0.0"`,
+		`"1.0.0-test"`,
 		`["1","0","0"]`,
 		`[1,0,0]`,
 	}

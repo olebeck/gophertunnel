@@ -40,7 +40,7 @@ func (v *Version) UnmarshalJSON(b []byte) error {
 			}
 		}
 	case string:
-		sp := strings.SplitN(val, ".", 3)
+		sp := strings.SplitN(strings.SplitN(val, "-", 2)[0], ".", 3)
 		if len(sp) == 3 {
 			v[0], err = strconv.Atoi(sp[0])
 			if err != nil {
