@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -454,7 +455,78 @@ func (reader packReader) find(fileName string) (io.ReadCloser, string, error) {
 	return fileReader, fileName, nil
 }
 
+func stripJsonComments(b []byte) []byte {
+	var commentRanges [][2]int
+	inSingleLineComment := false
+	inMultiLineComment := false
+	inString := false
+	start := 0
+
+	for i := 0; i < len(b); i++ {
+		if inSingleLineComment {
+			if b[i] == '\n' {
+				inSingleLineComment = false
+				commentRanges = append(commentRanges, [2]int{start, i})
+			}
+			continue
+		}
+
+		if inMultiLineComment {
+			if b[i] == '*' && i+1 < len(b) && b[i+1] == '/' {
+				inMultiLineComment = false
+				commentRanges = append(commentRanges, [2]int{start, i + 2})
+				i++ // Skip '/'
+			}
+			continue
+		}
+
+		if inString {
+			if b[i] == '\\' && i+1 < len(b) {
+				i++ // Skip escaped character
+				continue
+			}
+			if b[i] == '"' {
+				inString = false
+			}
+			continue
+		}
+
+		if b[i] == '"' {
+			inString = true
+			continue
+		}
+
+		if b[i] == '/' && i+1 < len(b) {
+			if b[i+1] == '/' {
+				inSingleLineComment = true
+				start = i
+				i++ // Skip second '/'
+				continue
+			}
+			if b[i+1] == '*' {
+				inMultiLineComment = true
+				start = i
+				i++ // Skip '*'
+				continue
+			}
+		}
+	}
+
+	// Remove any remaining open single line comments
+	if inSingleLineComment {
+		commentRanges = append(commentRanges, [2]int{start, len(b)})
+	}
+
+	// Reverse iterate over commentRanges and delete them from b
+	for i := len(commentRanges) - 1; i >= 0; i-- {
+		b = slices.Delete(b, commentRanges[i][0], commentRanges[i][1])
+	}
+
+	return b
+}
+
 func parseJson(s []byte, out any) error {
+	s = stripJsonComments(s)
 	v, err := hujson.Parse(s)
 	if err != nil {
 		if !strings.Contains(err.Error(), "after top-level value") {
