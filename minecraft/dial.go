@@ -232,9 +232,21 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 		}
 		request = login.EncodeOffline(conn.identityData, conn.clientData, d.ChainKey)
 	} else {
-		// We login as an Android device and this will show up in the 'titleId' field in the JWT chain, which
-		// we can't edit. We just enforce Android data for logging in.
-		setAndroidData(&conn.clientData)
+		switch conn.identityData.TitleID {
+		case "896928775": // Win10
+			conn.clientData.DeviceOS = protocol.DeviceWin10
+		case "1739947436": // Android
+			conn.clientData.DeviceOS = protocol.DeviceAndroid
+			if conn.clientData.DeviceModel == "" {
+				conn.clientData.DeviceModel = "SM-G970F"
+			}
+		case "1810924247": // iOS
+			conn.clientData.DeviceOS = protocol.DeviceIOS
+		case "2047319603": // Nintendo
+			conn.clientData.DeviceOS = protocol.DeviceNX
+		default:
+			return nil, fmt.Errorf("unknown TitleID: %s", conn.identityData.TitleID)
+		}
 
 		request = login.Encode(d.ChainData, conn.clientData, d.ChainKey)
 		identityData, _, _, _ := login.Parse(request)
@@ -424,15 +436,6 @@ func defaultClientData(address, username string, d *login.ClientData) {
 	if d.SkinGeometryVersion == "" {
 		d.SkinGeometryVersion = base64.StdEncoding.EncodeToString([]byte("0.0.0"))
 	}
-}
-
-// setAndroidData ensures the login.ClientData passed matches settings you would see on an Android device.
-func setAndroidData(data *login.ClientData) {
-	data.DeviceOS = protocol.DeviceAndroid
-	if data.DeviceModel == "" {
-		data.DeviceModel = "SM-G970F"
-	}
-	data.GameVersion = protocol.CurrentVersion
 }
 
 // clearXBLIdentityData clears data from the login.IdentityData that is only set when a player is logged into
