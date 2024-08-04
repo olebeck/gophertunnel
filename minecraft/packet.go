@@ -24,8 +24,8 @@ func ParseData(data []byte, PacketFunc func(header packet.Header, payload []byte
 		// we return to reading a new packet.
 		return nil, fmt.Errorf("read packet header: %w", err)
 	}
-	// The packet func was set, so we call it.
 	if PacketFunc != nil {
+		// The packet func was set, so we call it.
 		PacketFunc(*header, buf.Bytes())
 	}
 	return &packetData{h: header, full: data, payload: buf}, nil

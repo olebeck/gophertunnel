@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"log"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"github.com/pelletier/go-toml"
 	"github.com/sandertv/gophertunnel/minecraft"
 	"github.com/sandertv/gophertunnel/minecraft/auth"
-	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 	"golang.org/x/oauth2"
 )
 
@@ -21,21 +19,14 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	src := auth.RefreshTokenSource(token, context.Background(), nil)
+	src := auth.RefreshTokenSource(token)
 
 	p, err := minecraft.NewForeignStatusProvider(config.Connection.RemoteAddress)
 	if err != nil {
 		panic(err)
 	}
-
-	clientData := make(chan login.ClientData)
-
 	listener, err := minecraft.ListenConfig{
 		StatusProvider: p,
-		OnClientData: func(c *minecraft.Conn) {
-			clientData <- c.ClientData()
-			close(clientData)
-		},
 	}.Listen("raknet", config.Connection.LocalAddress)
 	if err != nil {
 		panic(err)
@@ -46,17 +37,15 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		go handleConn(c.(*minecraft.Conn), clientData, listener, config, src)
+		go handleConn(c.(*minecraft.Conn), listener, config, src)
 	}
 }
 
 // handleConn handles a new incoming minecraft.Conn from the minecraft.Listener passed.
-func handleConn(conn *minecraft.Conn, clientData chan login.ClientData, listener *minecraft.Listener, config config, src oauth2.TokenSource) {
+func handleConn(conn *minecraft.Conn, listener *minecraft.Listener, config config, src oauth2.TokenSource) {
 	serverConn, err := minecraft.Dialer{
-		TokenSource: src,
-		GetClientData: func() login.ClientData {
-			return <-clientData
-		},
+		TokenSource:   src,
+		GetClientData: conn.ClientData,
 	}.Dial("raknet", config.Connection.RemoteAddress)
 	if err != nil {
 		panic(err)

@@ -43,7 +43,6 @@ type Protocol interface {
 type ByteReader interface {
 	io.Reader
 	io.ByteReader
-	Len() int
 }
 
 type ByteWriter interface {
