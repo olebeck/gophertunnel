@@ -61,7 +61,7 @@ const (
 	EntityDataKeySeatLockPassengerRotation
 	EntityDataKeySeatLockPassengerRotationDegrees
 	EntityDataKeySeatRotationOffset
-	EntityDataKeySeatRotationOffstDegrees
+	EntityDataKeySeatRotationOffsetDegrees
 	EntityDataKeyDataRadius
 	EntityDataKeyDataWaiting
 	EntityDataKeyDataParticle
@@ -132,6 +132,7 @@ const (
 	EntityDataKeyPlayerLastDeathDimension
 	EntityDataKeyPlayerHasDied
 	EntityDataKeyCollisionBox
+	EntityDataKeyVisibleMobEffects
 )
 
 const (
