@@ -630,6 +630,9 @@ func (conn *Conn) deferPacket(pk *packetData) {
 // logged in, the packet is immediately handled.
 func (conn *Conn) receive(data []byte) error {
 	pkData, err := ParseData(data, func(header packet.Header, payload []byte) {
+		if conn.packetFunc == nil {
+			return
+		}
 		conn.packetFunc(header, payload, conn.RemoteAddr(), conn.LocalAddr(), time.Now())
 	})
 	if err != nil {
