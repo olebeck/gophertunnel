@@ -822,14 +822,9 @@ func (conn *Conn) handleLogin(pk *packet.Login) error {
 // handleClientToServerHandshake handles an incoming ClientToServerHandshake packet.
 func (conn *Conn) handleClientToServerHandshake() error {
 	// The next expected packet is a resource pack client response.
-	conn.expect(packet.IDResourcePackClientResponse, packet.IDClientCacheStatus)
+	conn.expect(packet.IDClientCacheStatus)
 	if err := conn.WritePacket(&packet.PlayStatus{Status: packet.PlayStatusLoginSuccess}); err != nil {
 		return fmt.Errorf("send PlayStatus (Status=LoginSuccess): %w", err)
-	}
-	pk := conn.ResourcePackHandler.GetResourcePacksInfo(conn.texturePacksRequired)
-	// Finally we send the packet after the play status.
-	if err := conn.WritePacket(pk); err != nil {
-		return fmt.Errorf("send ResourcePacksInfo: %w", err)
 	}
 	return nil
 }
@@ -905,6 +900,10 @@ func (conn *Conn) handleServerToClientHandshake(pk *packet.ServerToClientHandsha
 // has support for the client blob cache.
 func (conn *Conn) handleClientCacheStatus(pk *packet.ClientCacheStatus) error {
 	conn.cacheEnabled = pk.Enabled
+	conn.expect(packet.IDResourcePackClientResponse)
+	if err := conn.WritePacket(conn.ResourcePackHandler.GetResourcePacksInfo(conn.texturePacksRequired)); err != nil {
+		return fmt.Errorf("send ResourcePacksInfo: %w", err)
+	}
 	return nil
 }
 
