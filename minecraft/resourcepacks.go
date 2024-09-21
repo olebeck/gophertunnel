@@ -47,13 +47,12 @@ func (r *defaultResourcepackHandler) ResourcePacks() []resource.Pack {
 func (r *defaultResourcepackHandler) OnResourcePacksInfo(pk *packet.ResourcePacksInfo) error {
 	// First create a new resource pack queue with the information in the packet so we can download them
 	// properly later.
-	totalPacks := len(pk.TexturePacks) + len(pk.BehaviourPacks)
 	r.packQueue = &resourcePackQueue{
-		packAmount:       totalPacks,
+		packAmount:       len(pk.TexturePacks),
 		downloadingPacks: make(map[string]downloadingPack),
 		awaitingPacks:    make(map[string]*downloadingPack),
 	}
-	packsToDownload := make([]string, 0, totalPacks)
+	packsToDownload := make([]string, 0, len(pk.TexturePacks))
 
 	for index, pack := range pk.TexturePacks {
 		if _, ok := r.packQueue.downloadingPacks[pack.UUID]; ok {
@@ -61,30 +60,7 @@ func (r *defaultResourcepackHandler) OnResourcePacksInfo(pk *packet.ResourcePack
 			r.packQueue.packAmount--
 			continue
 		}
-		if r.c.downloadResourcePack != nil && !r.c.downloadResourcePack(uuid.MustParse(pack.UUID), pack.Version, index, totalPacks) {
-			r.ignoredResourcePacks = append(r.ignoredResourcePacks, exemptedResourcePack{
-				uuid:    pack.UUID,
-				version: pack.Version,
-			})
-			r.packQueue.packAmount--
-			continue
-		}
-		// This UUID_Version is a hack Mojang put in place.
-		packsToDownload = append(packsToDownload, pack.UUID+"_"+pack.Version)
-		r.packQueue.downloadingPacks[pack.UUID] = downloadingPack{
-			size:       pack.Size,
-			buf:        bytes.NewBuffer(make([]byte, 0, pack.Size)),
-			newFrag:    make(chan []byte),
-			contentKey: pack.ContentKey,
-		}
-	}
-	for index, pack := range pk.BehaviourPacks {
-		if _, ok := r.packQueue.downloadingPacks[pack.UUID]; ok {
-			r.c.log.Printf("duplicate behaviour pack entry %v in resource pack info\n", pack.UUID)
-			r.packQueue.packAmount--
-			continue
-		}
-		if r.c.downloadResourcePack != nil && !r.c.downloadResourcePack(uuid.MustParse(pack.UUID), pack.Version, index, totalPacks) {
+		if r.c.downloadResourcePack != nil && !r.c.downloadResourcePack(uuid.MustParse(pack.UUID), pack.Version, index, len(pk.TexturePacks)) {
 			r.ignoredResourcePacks = append(r.ignoredResourcePacks, exemptedResourcePack{
 				uuid:    pack.UUID,
 				version: pack.Version,
@@ -379,19 +355,6 @@ func (r *defaultResourcepackHandler) GetResourcePacksInfo(texturePacksRequired b
 				UUIDVersion: fmt.Sprintf("%s_%s", pack.UUID(), pack.Version()),
 				URL:         pack.DownloadURL(),
 			})
-		}
-
-		// If it has behaviours, add it to the behaviour pack list. If not, we add it to the texture packs
-		// list.
-		if pack.HasBehaviours() {
-			behaviourPack := protocol.BehaviourPackInfo{UUID: pack.UUID(), Version: pack.Version(), Size: uint64(pack.Len())}
-			if pack.HasScripts() {
-				// One of the resource packs has scripts, so we set HasScripts in the packet to true.
-				pk.HasScripts = true
-				behaviourPack.HasScripts = true
-			}
-			pk.BehaviourPacks = append(pk.BehaviourPacks, behaviourPack)
-			continue
 		}
 		texturePack := protocol.TexturePackInfo{UUID: pack.UUID(), Version: pack.Version(), Size: uint64(pack.Len())}
 		if pack.Encrypted() {
