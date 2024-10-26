@@ -9,7 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
@@ -89,7 +89,7 @@ type Conn struct {
 	close chan struct{}
 
 	conn        net.Conn
-	log         *log.Logger
+	log         *slog.Logger
 	authEnabled bool
 
 	proto         Protocol
@@ -178,7 +178,7 @@ type Conn struct {
 // Minecraft packets to that net.Conn.
 // newConn accepts a private key which will be used to identify the connection. If a nil key is passed, the
 // key is generated.
-func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *log.Logger, proto Protocol, flushRate time.Duration, limits bool) *Conn {
+func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *slog.Logger, proto Protocol, flushRate time.Duration, limits bool) *Conn {
 	conn := &Conn{
 		enc:          packet.NewEncoder(netConn),
 		dec:          packet.NewDecoder(netConn),
@@ -189,7 +189,7 @@ func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *log.Logger, proto Pro
 		spawn:        make(chan struct{}),
 		conn:         netConn,
 		privateKey:   key,
-		log:          log,
+		log:          log.With("raddr", netConn.RemoteAddr().String()),
 		hdr:          &packet.Header{},
 		proto:        proto,
 		readerLimits: limits,
@@ -412,7 +412,7 @@ func (conn *Conn) ReadPacket() (pk packet.Packet, err error) {
 	if data, ok := conn.takeDeferredPacket(); ok {
 		pk, err := data.decode(conn)
 		if err != nil {
-			conn.log.Println(err)
+			conn.log.Error("read packet: " + err.Error())
 			return conn.ReadPacket()
 		}
 		if len(pk) == 0 {
@@ -432,7 +432,7 @@ func (conn *Conn) ReadPacket() (pk packet.Packet, err error) {
 	case data := <-conn.packets:
 		pk, err := data.decode(conn)
 		if err != nil {
-			conn.log.Println(err)
+			conn.log.Error("read packet: " + err.Error())
 			return conn.ReadPacket()
 		}
 		if len(pk) == 0 {

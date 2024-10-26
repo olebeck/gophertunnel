@@ -56,7 +56,7 @@ func (r *defaultResourcepackHandler) OnResourcePacksInfo(pk *packet.ResourcePack
 
 	for index, pack := range pk.TexturePacks {
 		if _, ok := r.packQueue.downloadingPacks[pack.UUID]; ok {
-			r.c.log.Printf("duplicate texture pack entry %v in resource pack info\n", pack.UUID)
+			r.c.log.Warn("duplicate texture pack in resource pack info", "UUID", pack.UUID)
 			r.packQueue.packAmount--
 			continue
 		}
@@ -106,7 +106,7 @@ func (r *defaultResourcepackHandler) OnResourcePackDataInfo(pk *packet.ResourceP
 	if pack.size != pk.Size {
 		// Size mismatch: The ResourcePacksInfo packet had a size for the pack that did not match with the
 		// size sent here.
-		r.c.log.Printf("pack %v had a different size in the ResourcePacksInfo packet than the ResourcePackDataInfo packet\n", pk.UUID)
+		r.c.log.Warn("different size in the ResourcePacksInfo packet than the ResourcePackDataInfo packet", "UUID", pk.UUID)
 		pack.size = pk.Size
 	}
 
@@ -142,13 +142,13 @@ func (r *defaultResourcepackHandler) OnResourcePackDataInfo(pk *packet.ResourceP
 		defer r.packMu.Unlock()
 
 		if pack.buf.Len() != int(pack.size) {
-			r.c.log.Printf("incorrect resource pack size: expected %v, but got %v\n", pack.size, pack.buf.Len())
+			r.c.log.Warn("incorrect resource pack size", "expected", pack.size, "got", pack.buf.Len())
 			return
 		}
 		// First parse the resource pack from the total byte buffer we obtained.
 		newPack, err := resource.Read(pack.buf)
 		if err != nil {
-			r.c.log.Printf("invalid full resource pack data for UUID %v: %v\n", id, err)
+			r.c.log.Warn("invalid full resource pack data for UUID %v: %v\n", id, err)
 			return
 		}
 		r.packQueue.packAmount--
@@ -252,7 +252,7 @@ func (r *defaultResourcepackHandler) OnResourcePackStack(pk *packet.ResourcePack
 			if pack.UUID == behaviourPack.UUID {
 				// We had a behaviour pack with the same UUID as the texture pack, so we drop the texture
 				// pack and log it.
-				r.c.log.Printf("dropping behaviour pack with UUID %v due to a texture pack with the same UUID\n", pack.UUID)
+				r.c.log.Warn("dropping behaviour pack due to a texture pack with the same UUID", "UUID", pack.UUID)
 				pk.BehaviourPacks = append(pk.BehaviourPacks[:i], pk.BehaviourPacks[i+1:]...)
 			}
 		}
@@ -350,13 +350,12 @@ func (r *defaultResourcepackHandler) OnResourcePackClientResponse(pk *packet.Res
 func (r *defaultResourcepackHandler) GetResourcePacksInfo(texturePacksRequired bool) *packet.ResourcePacksInfo {
 	pk := &packet.ResourcePacksInfo{TexturePackRequired: texturePacksRequired}
 	for _, pack := range r.ResourcePacks() {
-		if pack.DownloadURL() != "" {
-			pk.PackURLs = append(pk.PackURLs, protocol.PackURL{
-				UUIDVersion: fmt.Sprintf("%s_%s", pack.UUID(), pack.Version()),
-				URL:         pack.DownloadURL(),
-			})
+		texturePack := protocol.TexturePackInfo{
+			UUID:        pack.UUID(),
+			Version:     pack.Version(),
+			Size:        uint64(pack.Len()),
+			DownloadURL: pack.DownloadURL(),
 		}
-		texturePack := protocol.TexturePackInfo{UUID: pack.UUID(), Version: pack.Version(), Size: uint64(pack.Len())}
 		if pack.Encrypted() {
 			texturePack.ContentKey = pack.ContentKey()
 			texturePack.ContentIdentity = pack.Manifest().Header.UUID
