@@ -179,15 +179,13 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 		d.FlushRate = time.Second / 20
 	}
 
-	key, _ := ecdsa.GenerateKey(elliptic.P384(), cryptorand.Reader)
-	var chainData string
-	if d.TokenSource != nil {
-		chainData, err = authChain(ctx, d.TokenSource, key)
+	if d.ChainKey == nil || d.ChainData == "" {
+		d.ChainKey, d.ChainData, err = CreateChain(ctx, d.TokenSource)
 		if err != nil {
 			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
 		}
-		d.IdentityData = readChainIdentityData([]byte(chainData))
 	}
+	d.IdentityData = readChainIdentityData([]byte(d.ChainData))
 
 	n, ok := networkByID(network, d.ErrorLog)
 	if !ok {
@@ -207,14 +205,6 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 	if err != nil {
 		return nil, err
 	}
-
-	if d.ChainKey == nil || d.ChainData == "" {
-		d.ChainKey, d.ChainData, err = CreateChain(ctxt, d.TokenSource)
-		if err != nil {
-			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
-		}
-	}
-	d.IdentityData = readChainIdentityData([]byte(d.ChainData))
 
 	if d.GetClientData != nil {
 		d.clientData = d.GetClientData()
