@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
+
 	"github.com/tailscale/hujson"
 )
 
@@ -24,7 +26,7 @@ type Pack interface {
 	io.WriterTo
 	fs.FS
 
-	UUID() string
+	UUID() uuid.UUID
 	Version() string
 	Name() string
 	Checksum() [32]byte
@@ -157,7 +159,7 @@ func (pack *pack) Name() string {
 }
 
 // UUID returns the UUID of the resource pack.
-func (pack *pack) UUID() string {
+func (pack *pack) UUID() uuid.UUID {
 	return pack.manifest.Header.UUID
 }
 
@@ -566,7 +568,6 @@ func (reader packReader) readManifest() (*Manifest, string, error) {
 	if err := parseJson(allData, &manifest); err != nil {
 		return nil, "", fmt.Errorf("error decoding manifest JSON: %v (data: %v)", err, string(allData))
 	}
-	manifest.Header.UUID = strings.ToLower(manifest.Header.UUID)
 
 	if _, _, err := reader.find("level.dat"); err == nil {
 		manifest.worldTemplate = true

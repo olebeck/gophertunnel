@@ -32,7 +32,7 @@ import (
 // exemptedResourcePack is a resource pack that is exempted from being downloaded. These packs may be directly
 // applied by sending them in the ResourcePackStack packet.
 type exemptedResourcePack struct {
-	uuid    string
+	uuid    uuid.UUID
 	version string
 }
 
@@ -40,7 +40,7 @@ type exemptedResourcePack struct {
 // in the ResourcePackStack packet.
 var exemptedPacks = []exemptedResourcePack{
 	{
-		uuid:    "0fba4063-dba1-4281-9b89-ff9390653530",
+		uuid:    uuid.MustParse("0fba4063-dba1-4281-9b89-ff9390653530"),
 		version: "1.0.0",
 	},
 }

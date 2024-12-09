@@ -49,8 +49,8 @@ func (r *defaultResourcepackHandler) OnResourcePacksInfo(pk *packet.ResourcePack
 	// properly later.
 	r.packQueue = &resourcePackQueue{
 		packAmount:       len(pk.TexturePacks),
-		downloadingPacks: make(map[string]downloadingPack),
-		awaitingPacks:    make(map[string]*downloadingPack),
+		downloadingPacks: make(map[uuid.UUID]downloadingPack),
+		awaitingPacks:    make(map[uuid.UUID]*downloadingPack),
 	}
 	packsToDownload := make([]string, 0, len(pk.TexturePacks))
 
@@ -60,7 +60,7 @@ func (r *defaultResourcepackHandler) OnResourcePacksInfo(pk *packet.ResourcePack
 			r.packQueue.packAmount--
 			continue
 		}
-		if r.c.downloadResourcePack != nil && !r.c.downloadResourcePack(uuid.MustParse(pack.UUID), pack.Version, index, len(pk.TexturePacks)) {
+		if r.c.downloadResourcePack != nil && !r.c.downloadResourcePack(pack.UUID, pack.Version, index, len(pk.TexturePacks)) {
 			r.ignoredResourcePacks = append(r.ignoredResourcePacks, exemptedResourcePack{
 				uuid:    pack.UUID,
 				version: pack.Version,
@@ -69,7 +69,7 @@ func (r *defaultResourcepackHandler) OnResourcePacksInfo(pk *packet.ResourcePack
 			continue
 		}
 		// This UUID_Version is a hack Mojang put in place.
-		packsToDownload = append(packsToDownload, pack.UUID+"_"+pack.Version)
+		packsToDownload = append(packsToDownload, pack.UUID.String()+"_"+pack.Version)
 		r.packQueue.downloadingPacks[pack.UUID] = downloadingPack{
 			size:       pack.Size,
 			buf:        bytes.NewBuffer(make([]byte, 0, pack.Size)),
@@ -95,7 +95,10 @@ func (r *defaultResourcepackHandler) OnResourcePacksInfo(pk *packet.ResourcePack
 // OnResourcePackDataInfo handles a resource pack data info packet, which initiates the downloading of the
 // pack by the client.
 func (r *defaultResourcepackHandler) OnResourcePackDataInfo(pk *packet.ResourcePackDataInfo) error {
-	id := strings.Split(pk.UUID, "_")[0]
+	id, err := uuid.Parse(strings.Split(pk.UUID, "_")[0])
+	if err != nil {
+		return err
+	}
 
 	pack, ok := r.packQueue.downloadingPacks[id]
 	if !ok {
@@ -166,7 +169,11 @@ func (r *defaultResourcepackHandler) OnResourcePackDataInfo(pk *packet.ResourceP
 // pack to be downloaded.
 func (r *defaultResourcepackHandler) OnResourcePackChunkRequest(pk *packet.ResourcePackChunkRequest) error {
 	current := r.packQueue.currentPack
-	if current.UUID() != pk.UUID {
+	pkUuid, err := uuid.Parse(pk.UUID)
+	if err != nil {
+		return err
+	}
+	if current.UUID() != pkUuid {
 		return fmt.Errorf("resource pack chunk request had unexpected UUID: expected %v, but got %v", current.UUID(), pk.UUID)
 	}
 	if r.packQueue.currentOffset != uint64(pk.ChunkIndex)*packChunkSize {
@@ -206,8 +213,11 @@ func (r *defaultResourcepackHandler) OnResourcePackChunkRequest(pk *packet.Resou
 // OnResourcePackChunkData handles a resource pack chunk data packet, which holds a fragment of a resource
 // pack that is being downloaded.
 func (r *defaultResourcepackHandler) OnResourcePackChunkData(pk *packet.ResourcePackChunkData) error {
-	pk.UUID = strings.Split(pk.UUID, "_")[0]
-	pack, ok := r.packQueue.awaitingPacks[pk.UUID]
+	pkUuid, err := uuid.Parse(strings.Split(pk.UUID, "_")[0])
+	if err != nil {
+		return err
+	}
+	pack, ok := r.packQueue.awaitingPacks[pkUuid]
 	if !ok {
 		// We haven't received a ResourcePackDataInfo packet from the server, so we can't use this data to
 		// download a resource pack.
@@ -272,9 +282,10 @@ func (r *defaultResourcepackHandler) OnResourcePackStack(pk *packet.ResourcePack
 
 // hasPack checks if the connection has a resource pack downloaded with the UUID and version passed, provided
 // the pack either has or does not have behaviours in it.
-func (r *defaultResourcepackHandler) hasPack(uuid string, version string, hasBehaviours bool) bool {
+func (r *defaultResourcepackHandler) hasPack(id string, version string, hasBehaviours bool) bool {
+	packId := uuid.MustParse(id)
 	for _, exempted := range exemptedPacks {
-		if exempted.uuid == uuid && exempted.version == version {
+		if exempted.uuid == packId && exempted.version == version {
 			// The server may send this resource pack on the stack without sending it in the info, as the client
 			// always has it downloaded.
 			return true
@@ -284,12 +295,12 @@ func (r *defaultResourcepackHandler) hasPack(uuid string, version string, hasBeh
 	defer r.packMu.Unlock()
 
 	for _, ignored := range r.ignoredResourcePacks {
-		if ignored.uuid == uuid && ignored.version == version {
+		if ignored.uuid == packId && ignored.version == version {
 			return true
 		}
 	}
 	for _, pack := range r.resourcePacks {
-		if pack.UUID() == uuid && pack.Version() == version && pack.HasBehaviours() == hasBehaviours {
+		if pack.UUID() == packId && pack.Version() == version && pack.HasBehaviours() == hasBehaviours {
 			return true
 		}
 	}
@@ -321,7 +332,7 @@ func (r *defaultResourcepackHandler) OnResourcePackClientResponse(pk *packet.Res
 	case packet.PackResponseAllPacksDownloaded:
 		pk := &packet.ResourcePackStack{BaseGameVersion: protocol.CurrentVersion, Experiments: []protocol.ExperimentData{{Name: "cameras", Enabled: true}}}
 		for _, pack := range r.resourcePacks {
-			resourcePack := protocol.StackResourcePack{UUID: pack.UUID(), Version: pack.Version()}
+			resourcePack := protocol.StackResourcePack{UUID: pack.UUID().String(), Version: pack.Version()}
 			// If it has behaviours, add it to the behaviour pack list. If not, we add it to the texture packs
 			// list.
 			if pack.HasBehaviours() {
@@ -332,7 +343,7 @@ func (r *defaultResourcepackHandler) OnResourcePackClientResponse(pk *packet.Res
 		}
 		for _, exempted := range exemptedPacks {
 			pk.TexturePacks = append(pk.TexturePacks, protocol.StackResourcePack{
-				UUID:    exempted.uuid,
+				UUID:    exempted.uuid.String(),
 				Version: exempted.version,
 			})
 		}
@@ -358,7 +369,7 @@ func (r *defaultResourcepackHandler) GetResourcePacksInfo(texturePacksRequired b
 		}
 		if pack.Encrypted() {
 			texturePack.ContentKey = pack.ContentKey()
-			texturePack.ContentIdentity = pack.Manifest().Header.UUID
+			texturePack.ContentIdentity = pack.Manifest().Header.UUID.String()
 		}
 		pk.TexturePacks = append(pk.TexturePacks, texturePack)
 	}
