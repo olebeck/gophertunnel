@@ -107,8 +107,9 @@ type Conn struct {
 	clientData   login.ClientData
 	onClientData func(*Conn)
 
-	gameData         GameData
-	gameDataReceived atomic.Bool
+	gameData             GameData
+	gameDataReceived     atomic.Bool
+	itemRegistryReceived atomic.Bool
 
 	// privateKey is the private key of this end of the connection. Each connection, regardless of which side
 	// the connection is on, server or client, has a unique private key generated.
@@ -966,6 +967,12 @@ func (conn *Conn) startGame() {
 // handleStartGame handles an incoming StartGame packet. It is the signal that the player has been added to a
 // world, and it obtains most of its dedicated properties.
 func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
+	var items []protocol.ItemEntry
+	if conn.itemRegistryReceived.Load() {
+		items = conn.gameData.Items
+	} else {
+		conn.expect(packet.IDItemRegistry)
+	}
 	conn.gameData = GameData{
 		Difficulty:                   pk.Difficulty,
 		WorldName:                    pk.WorldName,
@@ -988,6 +995,7 @@ func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
 		Time:                         pk.Time,
 		ServerBlockStateChecksum:     pk.ServerBlockStateChecksum,
 		CustomBlocks:                 pk.Blocks,
+		Items:                        items,
 		PlayerMovementSettings:       pk.PlayerMovementSettings,
 		WorldGameMode:                pk.WorldGameMode,
 		Hardcore:                     pk.Hardcore,
@@ -1000,13 +1008,13 @@ func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
 		UseBlockNetworkIDHashes:      pk.UseBlockNetworkIDHashes,
 		ServerAuthoritativeSound:     pk.ServerAuthoritativeSound,
 	}
-	conn.expect(packet.IDItemRegistry)
 	return nil
 }
 
 // handleItemRegistry handles an incoming ItemRegistry packet. It contains the item definitions that the client
 // should use, including the shield ID which is necessary for reading and writing items in the future.
 func (conn *Conn) handleItemRegistry(pk *packet.ItemRegistry) error {
+	conn.itemRegistryReceived.Store(true)
 	conn.gameData.Items = pk.Items
 	for _, item := range pk.Items {
 		if item.Name == "minecraft:shield" {

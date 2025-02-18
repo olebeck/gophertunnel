@@ -275,7 +275,7 @@ func (r *defaultResourcepackHandler) OnResourcePackStack(pk *packet.ResourcePack
 			return fmt.Errorf("behaviour pack {uuid=%v, version=%v} not downloaded", pack.UUID, pack.Version)
 		}
 	}
-	r.c.expect(packet.IDStartGame)
+	r.c.expect(packet.IDItemRegistry, packet.IDStartGame)
 	_ = r.c.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseCompleted})
 	return nil
 }
