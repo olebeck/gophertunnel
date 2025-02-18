@@ -151,7 +151,7 @@ func (r *defaultResourcepackHandler) OnResourcePackDataInfo(pk *packet.ResourceP
 		// First parse the resource pack from the total byte buffer we obtained.
 		newPack, err := resource.Read(pack.buf)
 		if err != nil {
-			r.c.log.Warn("invalid full resource pack data for UUID %v: %v\n", id, err)
+			r.c.log.Warn("invalid full resource pack data", "UUID", id, "err", err)
 			return
 		}
 		r.packQueue.packAmount--

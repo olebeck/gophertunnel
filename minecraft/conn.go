@@ -16,8 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/go-jose/go-jose/v3"
-	"github.com/go-jose/go-jose/v3/jwt"
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/google/uuid"
 	"github.com/sandertv/go-raknet"
 	"github.com/sandertv/gophertunnel/minecraft/internal"
@@ -743,6 +743,8 @@ func (conn *Conn) handlePacket(pk packet.Packet) error {
 		return conn.ResourcePackHandler.OnResourcePackStack(pk)
 	case *packet.StartGame:
 		return conn.handleStartGame(pk)
+	case *packet.ItemRegistry:
+		return conn.handleItemRegistry(pk)
 	case *packet.ChunkRadiusUpdated:
 		return conn.handleChunkRadiusUpdated(pk)
 	}
@@ -863,7 +865,7 @@ func fixupJWT(input []byte) string {
 // on the client side of the connection, using the hash and the public key from the server exposed in the
 // packet.
 func (conn *Conn) handleServerToClientHandshake(pk *packet.ServerToClientHandshake) error {
-	tok, err := jwt.ParseSigned(fixupJWT(pk.JWT))
+	tok, err := jwt.ParseSigned(fixupJWT(pk.JWT), []jose.SignatureAlgorithm{jose.ES384})
 	if err != nil {
 		return fmt.Errorf("parse server token: %w", err)
 	}
@@ -934,7 +936,6 @@ func (conn *Conn) startGame() {
 		GameRules:                    data.GameRules,
 		Time:                         data.Time,
 		Blocks:                       data.CustomBlocks,
-		Items:                        data.Items,
 		AchievementsDisabled:         true,
 		Generator:                    1,
 		EducationFeaturesEnabled:     true,
@@ -957,6 +958,7 @@ func (conn *Conn) startGame() {
 		UseBlockNetworkIDHashes:      data.UseBlockNetworkIDHashes,
 		ServerAuthoritativeSound:     data.ServerAuthoritativeSound,
 	})
+	_ = conn.WritePacket(&packet.ItemRegistry{Items: data.Items})
 	_ = conn.Flush()
 	conn.expect(packet.IDRequestChunkRadius, packet.IDSetLocalPlayerAsInitialised)
 }
@@ -986,7 +988,6 @@ func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
 		Time:                         pk.Time,
 		ServerBlockStateChecksum:     pk.ServerBlockStateChecksum,
 		CustomBlocks:                 pk.Blocks,
-		Items:                        pk.Items,
 		PlayerMovementSettings:       pk.PlayerMovementSettings,
 		WorldGameMode:                pk.WorldGameMode,
 		Hardcore:                     pk.Hardcore,
@@ -999,6 +1000,14 @@ func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
 		UseBlockNetworkIDHashes:      pk.UseBlockNetworkIDHashes,
 		ServerAuthoritativeSound:     pk.ServerAuthoritativeSound,
 	}
+	conn.expect(packet.IDItemRegistry)
+	return nil
+}
+
+// handleItemRegistry handles an incoming ItemRegistry packet. It contains the item definitions that the client
+// should use, including the shield ID which is necessary for reading and writing items in the future.
+func (conn *Conn) handleItemRegistry(pk *packet.ItemRegistry) error {
+	conn.gameData.Items = pk.Items
 	for _, item := range pk.Items {
 		if item.Name == "minecraft:shield" {
 			conn.shieldID.Store(int32(item.RuntimeID))
@@ -1137,7 +1146,7 @@ func (conn *Conn) enableEncryption(clientPublicKey *ecdsa.PublicKey) error {
 	})
 	// We produce an encoded JWT using the header and payload above, then we send the JWT in a ServerToClient-
 	// Handshake packet so that the client can initialise encryption.
-	serverJWT, err := jwt.Signed(signer).Claims(saltClaims{Salt: base64.RawStdEncoding.EncodeToString(conn.salt)}).CompactSerialize()
+	serverJWT, err := jwt.Signed(signer).Claims(saltClaims{Salt: base64.RawStdEncoding.EncodeToString(conn.salt)}).Serialize()
 	if err != nil {
 		return fmt.Errorf("compact serialise server JWT: %w", err)
 	}

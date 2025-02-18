@@ -19,7 +19,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-jose/go-jose/v3/jwt"
+	"github.com/go-jose/go-jose/v4"
+	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/google/uuid"
 	"github.com/sandertv/gophertunnel/minecraft/auth"
 	"github.com/sandertv/gophertunnel/minecraft/internal"
@@ -185,7 +186,10 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
 		}
 	}
-	d.IdentityData = readChainIdentityData([]byte(d.ChainData))
+	d.IdentityData, err = readChainIdentityData([]byte(d.ChainData))
+	if err != nil {
+		return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
+	}
 
 	n, ok := networkByID(network, d.ErrorLog)
 	if !ok {
@@ -301,29 +305,29 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 
 // readChainIdentityData reads a login.IdentityData from the Mojang chain
 // obtained through authentication.
-func readChainIdentityData(chainData []byte) login.IdentityData {
+func readChainIdentityData(chainData []byte) (login.IdentityData, error) {
 	if len(chainData) == 0 {
-		return login.IdentityData{}
+		return login.IdentityData{}, nil
 	}
 	chain := struct{ Chain []string }{}
 	if err := json.Unmarshal(chainData, &chain); err != nil {
-		panic("invalid chain data from authentication: " + err.Error())
+		return login.IdentityData{}, fmt.Errorf("read chain: read json: %w", err)
 	}
 	data := chain.Chain[1]
 	claims := struct {
 		ExtraData login.IdentityData `json:"extraData"`
 	}{}
-	tok, err := jwt.ParseSigned(data)
+	tok, err := jwt.ParseSigned(data, []jose.SignatureAlgorithm{jose.ES384})
 	if err != nil {
-		panic("invalid chain data from authentication: " + err.Error())
+		return login.IdentityData{}, fmt.Errorf("read chain: parse jwt: %w", err)
 	}
 	if err := tok.UnsafeClaimsWithoutVerification(&claims); err != nil {
-		panic("invalid chain data from authentication: " + err.Error())
+		return login.IdentityData{}, fmt.Errorf("read chain: read claims: %w", err)
 	}
 	if claims.ExtraData.Identity == "" {
-		panic("chain data contained no data")
+		return login.IdentityData{}, fmt.Errorf("read chain: no extra data found")
 	}
-	return claims.ExtraData
+	return claims.ExtraData, nil
 }
 
 // listenConn listens on the connection until it is closed on another goroutine. The channel passed will

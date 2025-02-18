@@ -7,7 +7,7 @@ toolchain go1.22.1
 require (
 	github.com/dlclark/regexp2 v1.11.0
 	github.com/go-gl/mathgl v1.1.0
-	github.com/go-jose/go-jose/v3 v3.0.3
+	github.com/go-jose/go-jose/v4 v4.0.4
 	github.com/golang/snappy v0.0.4
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.17.11
