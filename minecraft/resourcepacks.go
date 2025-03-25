@@ -134,7 +134,7 @@ func (r *defaultResourcepackHandler) OnResourcePackDataInfo(pk *packet.ResourceP
 				ChunkIndex: i,
 			})
 			select {
-			case <-r.c.close:
+			case <-r.c.ctx.Done():
 				return
 			case frag := <-pack.newFrag:
 				// Write the fragment to the full buffer of the downloading resource pack.
