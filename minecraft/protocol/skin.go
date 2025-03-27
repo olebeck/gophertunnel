@@ -109,6 +109,9 @@ func (x *Skin) Marshal(r IO) {
 	if len(x.CapeData) > cape_expected_length {
 		x.CapeData = x.CapeData[:cape_expected_length]
 	}
+	if len(x.CapeData) == 0 {
+		x.CapeData = make([]byte, cape_expected_length)
+	}
 
 	if err := x.validate(); err != nil {
 		r.InvalidValue(fmt.Sprintf("Skin %v", x.SkinID), "serialised skin", err.Error())
