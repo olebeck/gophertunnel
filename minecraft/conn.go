@@ -633,16 +633,15 @@ func (conn *Conn) deferPacket(pk *packetData) {
 // receive receives an incoming serialised packet from the underlying connection. If the connection is not yet
 // logged in, the packet is immediately handled.
 func (conn *Conn) receive(data []byte) error {
-	pkData, err := ParseData(data, func(header packet.Header, payload []byte) {
-		if conn.packetFunc == nil {
-			return
-		}
-		conn.packetFunc(header, payload, conn.RemoteAddr(), conn.LocalAddr(), time.Now())
-	})
+	pkData, err := ParseData(data)
 	if err != nil {
 		return err
 	}
-	if pkData.h.PacketID == packet.IDDisconnect {
+	if conn.packetFunc != nil {
+		conn.packetFunc(*pkData.Header, pkData.Payload.Bytes(), conn.RemoteAddr(), conn.LocalAddr(), time.Now())
+	}
+
+	if pkData.Header.PacketID == packet.IDDisconnect {
 		// We always handle disconnect packets and close the connection if one comes in.
 		pks, err := pkData.decode(conn)
 		if err != nil {
@@ -672,7 +671,7 @@ func (conn *Conn) receive(data []byte) error {
 // handle tries to handle the incoming packetData.
 func (conn *Conn) handle(pkData *packetData) error {
 	for _, id := range conn.expectedIDs.Load().([]uint32) {
-		if id == pkData.h.PacketID {
+		if id == pkData.Header.PacketID {
 			// If the packet was expected, so we handle it right now.
 			pks, err := pkData.decode(conn)
 			if err != nil {
