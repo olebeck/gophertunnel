@@ -192,7 +192,7 @@ func (c *Client) RequestWithMethod(ctx context.Context, path string, method stri
 		path = path[1:]
 	}
 	url := fmt.Sprintf("%s%s", c.baseUrl, path)
-	req, err := http.NewRequest(method, url, ReqBody)
+	req, err := http.NewRequestWithContext(ctx, method, url, ReqBody)
 	if err != nil {
 		return nil, err
 	}
