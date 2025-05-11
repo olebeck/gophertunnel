@@ -58,7 +58,6 @@ type IConn interface {
 	IdentityData() login.IdentityData
 	Latency() time.Duration
 	LocalAddr() net.Addr
-	Read(b []byte) (n int, err error)
 	ReadPacket() (pk packet.Packet, err error)
 	ReadPacketWithTime() (pk packet.Packet, receivedAt time.Time, err error)
 	RemoteAddr() net.Addr
@@ -70,13 +69,14 @@ type IConn interface {
 	StartGame(data GameData) error
 	StartGameContext(ctx context.Context, data GameData) error
 	StartGameTimeout(data GameData, timeout time.Duration) error
-	Write(b []byte) (n int, err error)
 	WritePacket(pk packet.Packet) error
 	Expect(...uint32)
 	Context() context.Context
 	SetLoggedIn()
 	ShieldID() int32
 }
+
+type PrePlayPacketHandler func(c *Conn, pk packet.Packet, timeReceived time.Time) (handled bool, err error)
 
 // Conn represents a Minecraft (Bedrock Edition) connection over a specific net.Conn transport layer. Its
 // methods (Read, Write etc.) are safe to be called from multiple goroutines simultaneously, but ReadPacket
@@ -126,7 +126,7 @@ type Conn struct {
 	// deferredPackets is a list of packets that were pushed back during the login sequence because they
 	// were not used by the connection yet. These packets are read the first when calling to Read or
 	// ReadPacket after being connected.
-	deferredPackets []*packetData
+	deferredPackets []decodeablePacket
 	readDeadline    <-chan time.Time
 
 	sendMu sync.Mutex
@@ -162,6 +162,8 @@ type Conn struct {
 	// packetFunc is an optional function passed to a Dial() call. If set, each packet read from and written
 	// to this connection will call this function.
 	packetFunc func(header packet.Header, payload []byte, src, dst net.Addr, timeReceived time.Time)
+
+	prePlayPacketHandler PrePlayPacketHandler
 
 	shieldID atomic.Int32
 
@@ -219,6 +221,10 @@ func newConn(netConn net.Conn, key *ecdsa.PrivateKey, log *slog.Logger, proto Pr
 		}
 	}()
 	return conn
+}
+
+func (conn *Conn) SetPrePlayPacketHandler(fn PrePlayPacketHandler) {
+	conn.prePlayPacketHandler = fn
 }
 
 func (conn *Conn) Stats() *raknet.RakNetStatistics {
@@ -452,55 +458,6 @@ func (conn *Conn) ResourcePacks() []resource.Pack {
 	return conn.ResourcePackHandler.ResourcePacks()
 }
 
-// Write writes a slice of serialised packet data to the Conn. The data is buffered until the next 20th of a
-// tick, after which it is flushed to the connection. Write returns the amount of bytes written n.
-func (conn *Conn) Write(b []byte) (n int, err error) {
-	conn.sendMu.Lock()
-	defer conn.sendMu.Unlock()
-
-	conn.bufferedSend = append(conn.bufferedSend, b)
-	return len(b), nil
-}
-
-// ReadBytes reads a packet from the connection without decoding it directly.
-// For direct reading, consider using ReadPacket() which decodes the packet.
-func (conn *Conn) ReadBytes() ([]byte, error) {
-	if data, ok := conn.takeDeferredPacket(); ok {
-		return data.full, nil
-	}
-	select {
-	case <-conn.ctx.Done():
-		return nil, conn.closeErr("read")
-	case <-conn.readDeadline:
-		return nil, conn.wrap(context.DeadlineExceeded, "read")
-	case data := <-conn.packets:
-		return data.full, nil
-	}
-}
-
-// Read reads a packet from the connection into the byte slice passed, provided the byte slice is big enough
-// to carry the full packet.
-// It is recommended to use ReadPacket() and ReadBytes() rather than Read() in cases where reading is done directly.
-func (conn *Conn) Read(b []byte) (n int, err error) {
-	if data, ok := conn.takeDeferredPacket(); ok {
-		if len(b) < len(data.full) {
-			return 0, conn.wrap(errBufferTooSmall, "read")
-		}
-		return copy(b, data.full), nil
-	}
-	select {
-	case <-conn.ctx.Done():
-		return 0, conn.closeErr("read")
-	case <-conn.readDeadline:
-		return 0, conn.wrap(context.DeadlineExceeded, "read")
-	case data := <-conn.packets:
-		if len(b) < len(data.full) {
-			return 0, conn.wrap(errBufferTooSmall, "read")
-		}
-		return copy(b, data.full), nil
-	}
-}
-
 // Flush flushes the packets currently buffered by the connections to the underlying net.Conn, so that they
 // are directly sent.
 func (conn *Conn) Flush() error {
@@ -603,7 +560,7 @@ func (conn *Conn) Context() context.Context {
 
 // takeDeferredPacket locks the deferred packets lock and takes the next packet from the list of deferred
 // packets. If none was found, it returns false, and if one was found, the data and true is returned.
-func (conn *Conn) takeDeferredPacket() (*packetData, bool) {
+func (conn *Conn) takeDeferredPacket() (decodeablePacket, bool) {
 	conn.deferredPacketMu.Lock()
 	defer conn.deferredPacketMu.Unlock()
 
@@ -620,7 +577,7 @@ func (conn *Conn) takeDeferredPacket() (*packetData, bool) {
 }
 
 // deferPacket defers a packet so that it is obtained in the next ReadPacket call
-func (conn *Conn) deferPacket(pk *packetData) {
+func (conn *Conn) deferPacket(pk decodeablePacket) {
 	conn.deferredPacketMu.Lock()
 	conn.deferredPackets = append(conn.deferredPackets, pk)
 	conn.deferredPacketMu.Unlock()
@@ -676,9 +633,29 @@ func (conn *Conn) handle(pkData *packetData) error {
 			return conn.handleMultiple(pks)
 		}
 	}
-	// This is not the packet we expected next in the login sequence. We push it back so that it may
-	// be handled by the user.
-	conn.deferPacket(pkData)
+	if conn.prePlayPacketHandler != nil {
+		var def deferredPackets
+		pks, err := pkData.decode(conn)
+		if err != nil {
+			return err
+		}
+		for _, pk := range pks {
+			handled, err := conn.prePlayPacketHandler(conn, pk, time.Now())
+			if err != nil {
+				return err
+			}
+			if !handled {
+				def.pks = append(def.pks, pk)
+			}
+		}
+		if len(def.pks) > 0 {
+			conn.deferPacket(def)
+		}
+	} else {
+		// This is not the packet we expected next in the login sequence. We push it back so that it may
+		// be handled by the user.
+		conn.deferPacket(pkData)
+	}
 	return nil
 }
 

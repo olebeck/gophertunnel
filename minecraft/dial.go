@@ -106,6 +106,8 @@ type Dialer struct {
 	ChainData string
 
 	EarlyConnHandler func(*Conn)
+
+	PrePlayPacketHandler PrePlayPacketHandler
 }
 
 // Dial dials a Minecraft connection to the address passed over the network passed. The network is typically
@@ -223,6 +225,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 	conn.cacheEnabled = d.EnableClientCache
 	conn.disconnectOnInvalidPacket = d.DisconnectOnInvalidPackets
 	conn.disconnectOnUnknownPacket = d.DisconnectOnUnknownPackets
+	conn.prePlayPacketHandler = d.PrePlayPacketHandler
 
 	defaultIdentityData(&conn.identityData)
 	defaultClientData(address, conn.identityData.DisplayName, &conn.clientData)
@@ -258,10 +261,6 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 		// If we got the identity data from Minecraft auth, we need to make sure we set it in the Conn too, as
 		// we are not aware of the identity data ourselves yet.
 		conn.identityData = identityData
-	}
-
-	if d.EarlyConnHandler != nil {
-		d.EarlyConnHandler(conn)
 	}
 
 	if d.EarlyConnHandler != nil {

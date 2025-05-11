@@ -34,6 +34,18 @@ func (err unknownPacketError) Error() string {
 	return fmt.Sprintf("unexpected packet (ID=%v)", err.id)
 }
 
+type decodeablePacket interface {
+	decode(conn *Conn) (pks []packet.Packet, err error)
+}
+
+type deferredPackets struct {
+	pks []packet.Packet
+}
+
+func (d deferredPackets) decode(conn *Conn) (pks []packet.Packet, err error) {
+	return d.pks, nil
+}
+
 func (p *packetData) decode(conn *Conn) (pks []packet.Packet, err error) {
 	return p.Decode(conn.pool, conn.proto, conn.Close, conn.disconnectOnUnknownPacket, conn.disconnectOnInvalidPacket, conn.shieldID.Load())
 }

@@ -25,11 +25,10 @@ func ExampleListen() {
 	for {
 		// Accept connections in a for loop. Accept will only return an error if the minecraft.Listener is
 		// closed. (So never unexpectedly.)
-		c, err := listener.Accept()
+		conn, err := listener.AcceptMinecraft()
 		if err != nil {
 			return
 		}
-		conn := c.(*minecraft.Conn)
 
 		go func() {
 			// Process the connection on another goroutine as you would with TCP connections.

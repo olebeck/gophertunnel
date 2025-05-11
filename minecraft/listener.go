@@ -160,11 +160,11 @@ func Listen(network, address string) (*Listener, error) {
 	return lc.Listen(network, address)
 }
 
-// Accept accepts a fully connected (on Minecraft layer) connection which is ready to receive and send
+// AcceptMinecraft accepts a fully connected (on Minecraft layer) connection which is ready to receive and send
 // packets. It is recommended to cast the net.Conn returned to a *minecraft.Conn so that it is possible to
 // use the Conn.ReadPacket() and Conn.WritePacket() methods.
 // Accept returns an error if the listener is closed.
-func (listener *Listener) Accept() (net.Conn, error) {
+func (listener *Listener) AcceptMinecraft() (*Conn, error) {
 	conn, ok := <-listener.incoming
 	if !ok {
 		return nil, &net.OpError{Op: "accept", Net: "minecraft", Addr: listener.Addr(), Err: net.ErrClosed}

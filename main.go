@@ -33,11 +33,11 @@ func main() {
 	}
 	defer listener.Close()
 	for {
-		c, err := listener.Accept()
+		conn, err := listener.AcceptMinecraft()
 		if err != nil {
 			panic(err)
 		}
-		go handleConn(c.(*minecraft.Conn), listener, config, src)
+		go handleConn(conn, listener, config, src)
 	}
 }
 
