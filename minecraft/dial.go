@@ -102,6 +102,11 @@ type Dialer struct {
 	// For getting this to work with BDS, authentication should be disabled.
 	KeepXBLIdentityData bool
 
+	// EnableLegacyAuth, if set to true, will use the legacy authentication behavior
+	// (pre-1.21.90) when connecting to the server. This should only be used for outdated
+	// servers, as enabling it will cause compatibility issues with updated servers.
+	EnableLegacyAuth bool
+
 	ChainKey  *ecdsa.PrivateKey
 	ChainData string
 
@@ -238,7 +243,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 		if !d.KeepXBLIdentityData {
 			clearXBLIdentityData(&conn.identityData)
 		}
-		request = login.EncodeOffline(conn.identityData, conn.clientData, d.ChainKey)
+		request = login.EncodeOffline(conn.identityData, conn.clientData, d.ChainKey, d.EnableLegacyAuth)
 	} else {
 		switch conn.identityData.TitleID {
 		case "896928775": // Win10
@@ -256,7 +261,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 			return nil, fmt.Errorf("unknown TitleID: %s", conn.identityData.TitleID)
 		}
 
-		request = login.Encode(d.ChainData, conn.clientData, d.ChainKey)
+		request = login.Encode(d.ChainData, conn.clientData, d.ChainKey, d.EnableLegacyAuth)
 		identityData, _, _, _ := login.Parse(request)
 		// If we got the identity data from Minecraft auth, we need to make sure we set it in the Conn too, as
 		// we are not aware of the identity data ourselves yet.
