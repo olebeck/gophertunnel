@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/sandertv/gophertunnel/minecraft/auth"
-	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"golang.org/x/oauth2"
 )
 
@@ -19,15 +18,21 @@ type Client struct {
 	tokenSrc      oauth2.TokenSource
 	xblToken      *auth.XBLToken
 	baseUrl       string
+	httpClient    *http.Client
 }
 
 // NewClient returns a new Client instance with the supplied token source for authentication.
-func NewClient(src oauth2.TokenSource, baseUrl string) *Client {
+// If httpClient is nil, http.DefaultClient will be used to request the realms api.
+func NewClient(src oauth2.TokenSource, httpClient *http.Client, baseUrl string) *Client {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
 	if baseUrl == "" {
 		baseUrl = "https://pocket.realms.minecraft.net/"
 	}
 	return &Client{
 		tokenSrc:      src,
+		httpClient:    httpClient,
 		ClientVersion: protocol.CurrentVersion,
 		baseUrl:       baseUrl,
 	}
@@ -209,7 +214,7 @@ func (c *Client) RequestWithMethod(ctx context.Context, path string, method stri
 	}
 	xbl.SetAuthHeader(req)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := r.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

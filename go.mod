@@ -2,8 +2,6 @@ module github.com/sandertv/gophertunnel
 
 go 1.24
 
-toolchain go1.24.2
-
 require (
 	github.com/go-gl/mathgl v1.2.0
 	github.com/go-jose/go-jose/v4 v4.1.0
