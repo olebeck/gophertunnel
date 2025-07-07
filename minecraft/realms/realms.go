@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sandertv/gophertunnel/minecraft/auth"
+	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"golang.org/x/oauth2"
 )
 
@@ -214,7 +215,7 @@ func (c *Client) RequestWithMethod(ctx context.Context, path string, method stri
 	}
 	xbl.SetAuthHeader(req)
 
-	resp, err := r.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
