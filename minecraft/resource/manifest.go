@@ -1,6 +1,13 @@
 package resource
 
-import "github.com/google/uuid"
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/google/uuid"
+)
 
 // Documentation on this may be found here:
 // https://learn.microsoft.com/en-us/minecraft/creator/reference/content/addonsreference/examples/addonmanifest
@@ -25,10 +32,19 @@ type Manifest struct {
 	Subpacks []Subpack `json:"subpacks,omitempty"`
 
 	Settings []Setting `json:"settings,omitempty"`
+	// Metadata contains additional information about the pack that is otherwise optional.
+	Metadata *Metadata `json:"metadata,omitempty"`
 
 	// worldTemplate holds a value indicating if the pack holds an entire world template or not.
 	worldTemplate bool
 }
+
+// Capability is a particular feature that the pack utilises of that isn't necessarily enabled by default.
+//
+//	experimental_custom_ui: Allows HTML files in the pack to be used for custom UI, and scripts in the pack
+//	                        to call and manipulate custom UI.
+//	chemistry:              Allows the pack to add, change or replace Chemistry functionality.
+type Capability string
 
 // Header is the header of a resource pack. It contains information that applies to the entire resource pack,
 // such as the name of the resource pack.
@@ -71,13 +87,6 @@ type Dependency struct {
 	Version Version `json:"version"`
 }
 
-// Capability is a particular feature that the pack utilises of that isn't necessarily enabled by default.
-//
-//	experimental_custom_ui: Allows HTML files in the pack to be used for custom UI, and scripts in the pack
-//	                        to call and manipulate custom UI.
-//	chemistry:              Allows the pack to add, change or replace Chemistry functionality.
-type Capability string
-
 type Subpack struct {
 	FolderName string `json:"folder_name"`
 	Name       string `json:"name"`
@@ -92,9 +101,41 @@ type Setting struct {
 // Metadata contains additional information about the pack that is otherwise optional.
 type Metadata struct {
 	// Author is the name of the author(s) of the pack.
-	Author string `json:"authors,omitempty"`
+	Authors []string `json:"authors,omitempty"`
 	// License is the license applied to the pack.
 	License string `json:"license,omitempty"`
 	// URL is the home website of the creator of the pack.
 	URL string `json:"url,omitempty"`
+}
+
+// Version may be present in the manifest as [1,0,0] or "1.0.0".
+type Version [3]int
+
+func (v *Version) UnmarshalJSON(b []byte) error {
+	// Parse common array format [1,0,0]
+	var arr [3]int
+	if err := json.Unmarshal(b, &arr); err == nil {
+		*v = arr
+		return nil
+	}
+
+	// Parse semver format "1.0.0"
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		s = strings.TrimSpace(s)
+		parts := strings.Split(s, ".")
+		if len(parts) != 3 {
+			return fmt.Errorf("invalid version %q (need x.y.z)", s)
+		}
+		for i := range 3 {
+			n, err := strconv.Atoi(parts[i])
+			if err != nil {
+				return fmt.Errorf("invalid version component %q in %q", parts[i], s)
+			}
+			v[i] = n
+		}
+		return nil
+	}
+
+	return fmt.Errorf("invalid version: %s", string(b))
 }

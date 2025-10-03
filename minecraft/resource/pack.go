@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
 	"sync"
 
 	"github.com/google/uuid"
-
 	"github.com/tailscale/hujson"
 )
 
@@ -171,7 +171,8 @@ func (pack *pack) Description() string {
 // Version returns the string version of the resource pack. It is guaranteed to have 3 digits in it, joined
 // by a dot.
 func (pack *pack) Version() string {
-	return pack.manifest.Header.Version.String()
+	ver := pack.manifest.Header.Version
+	return fmt.Sprintf("%d.%d.%d", ver[0], ver[1], ver[2])
 }
 
 // Modules returns all modules that the resource pack exists out of. Resource packs usually have only one
