@@ -219,7 +219,7 @@ func parseAsKey(k any, pub *ecdsa.PublicKey) error {
 // Encode encodes a login request using the encoded login chain passed and the client data. The request's
 // client data token is signed using the private key passed. It must be the same as the one used to get the
 // login chain.
-func Encode(loginChain string, data ClientData, key *ecdsa.PrivateKey, legacy bool) []byte {
+func Encode(loginChain string, data ClientData, key *ecdsa.PrivateKey, legacy bool, token string) []byte {
 	// We first decode the login chain we actually got in a new certificate.
 	cert := &certificate{}
 	_ = json.Unmarshal([]byte(loginChain), &cert)
@@ -255,6 +255,7 @@ func Encode(loginChain string, data ClientData, key *ecdsa.PrivateKey, legacy bo
 	// We create another token this time, which is signed the same as the claim we just inserted in the chain,
 	// just now it contains client data.
 	req.RawToken, _ = jwt.Signed(signer).Claims(data).Serialize()
+	req.Token = token
 
 	return encodeRequest(req)
 }

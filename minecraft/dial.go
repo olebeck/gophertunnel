@@ -31,6 +31,13 @@ import (
 	"golang.org/x/oauth2"
 )
 
+type AuthSource interface {
+	Token(ctx context.Context) (*oauth2.Token, error)
+	XBLToken(ctx context.Context) (*auth.XBLToken, error)
+	Chain(ctx context.Context) (ChainKey *ecdsa.PrivateKey, ChainData string, err error)
+	PfToken(ctx context.Context, chainPublicKey *ecdsa.PublicKey) (string, error)
+}
+
 // Dialer allows specifying specific settings for connection to a Minecraft server.
 // The zero value of Dialer is used for the package level Dial function.
 type Dialer struct {
@@ -54,11 +61,7 @@ type Dialer struct {
 	// The minecraft/auth package provides an oauth2.TokenSource implementation (auth.tokenSource) to use
 	// device auth to login.
 	// If TokenSource is nil, the connection will not use authentication.
-	TokenSource oauth2.TokenSource
-
-	// XBLToken should be used in place of TokenSource if the XBL token is already known, i.e through a different
-	// oauth source. This token is for with the https://multiplayer.minecraft.net relaying party.
-	XBLToken *auth.XBLToken
+	AuthSource AuthSource
 
 	// PacketFunc is called whenever a packet is read from or written to the connection returned when using
 	// Dialer.Dial(). It includes packets that are otherwise covered in the connection sequence, such as the
@@ -111,9 +114,6 @@ type Dialer struct {
 	// (pre-1.21.90) when connecting to the server. This should only be used for outdated
 	// servers, as enabling it will cause compatibility issues with updated servers.
 	EnableLegacyAuth bool
-
-	ChainKey  *ecdsa.PrivateKey
-	ChainData string
 
 	EarlyConnHandler func(*Conn)
 
@@ -192,17 +192,30 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 		d.FlushRate = time.Second / 20
 	}
 
-	if d.ChainKey == nil || d.ChainData == "" {
-		xblToken, err := getXBLToken(ctx, d)
+	var chainKey *ecdsa.PrivateKey
+	var chainData string
+	var pfToken string
+	if d.AuthSource != nil {
+		chainKey, chainData, err = d.AuthSource.Chain(ctx)
 		if err != nil {
 			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
 		}
-		d.ChainKey, d.ChainData, err = CreateChain(ctx, xblToken)
+		pfToken, err = d.AuthSource.PfToken(ctx, &chainKey.PublicKey)
 		if err != nil {
 			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
 		}
 	}
-	d.IdentityData, err = readChainIdentityData([]byte(d.ChainData))
+	if chainKey == nil || chainData == "" {
+		xblToken, err := getXBLToken(ctx, d)
+		if err != nil {
+			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
+		}
+		chainKey, chainData, err = CreateChain(ctx, xblToken)
+		if err != nil {
+			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
+		}
+	}
+	d.IdentityData, err = readChainIdentityData([]byte(chainData))
 	if err != nil {
 		return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
 	}
@@ -230,7 +243,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 		d.clientData = d.GetClientData()
 	}
 
-	conn = newConn(netConn, d.ChainKey, d.ErrorLog, d.Protocol, d.FlushRate, false)
+	conn = newConn(netConn, chainKey, d.ErrorLog, d.Protocol, d.FlushRate, false)
 	conn.pool = conn.proto.Packets(false)
 	conn.identityData = d.IdentityData
 	conn.clientData = d.clientData
@@ -246,14 +259,14 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 	defaultClientData(address, conn.identityData.DisplayName, &conn.clientData)
 
 	var request []byte
-	if d.TokenSource == nil {
+	if d.AuthSource == nil {
 		// We haven't logged into the user's XBL account. We create a login request with only one token
 		// holding the identity data set in the Dialer after making sure we clear data from the identity data
 		// that is only present when logged in.
 		if !d.KeepXBLIdentityData {
 			clearXBLIdentityData(&conn.identityData)
 		}
-		request = login.EncodeOffline(conn.identityData, conn.clientData, d.ChainKey, d.EnableLegacyAuth)
+		request = login.EncodeOffline(conn.identityData, conn.clientData, chainKey, d.EnableLegacyAuth)
 	} else {
 		switch conn.identityData.TitleID {
 		case "896928775": // Win10
@@ -271,7 +284,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string, initia
 			return nil, fmt.Errorf("unknown TitleID: %s", conn.identityData.TitleID)
 		}
 
-		request = login.Encode(d.ChainData, conn.clientData, d.ChainKey, d.EnableLegacyAuth)
+		request = login.Encode(chainData, conn.clientData, chainKey, d.EnableLegacyAuth, pfToken)
 		identityData, _, _, _ := login.Parse(request)
 		// If we got the identity data from Minecraft auth, we need to make sure we set it in the Conn too, as
 		// we are not aware of the identity data ourselves yet.
@@ -391,15 +404,19 @@ func listenConn(conn *Conn, readyForLogin, connected chan struct{}, cancel conte
 }
 
 func getXBLToken(ctx context.Context, dialer Dialer) (*auth.XBLToken, error) {
-	if dialer.XBLToken != nil {
-		return dialer.XBLToken, nil
+	xblToken, err := dialer.AuthSource.XBLToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if xblToken != nil {
+		return xblToken, nil
 	}
 
-	liveToken, err := dialer.TokenSource.Token()
+	liveToken, err := dialer.AuthSource.Token(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("request Live Connect token: %w", err)
 	}
-	xblToken, err := auth.RequestXBLToken(ctx, liveToken, "https://multiplayer.minecraft.net/")
+	xblToken, err = auth.RequestXBLToken(ctx, liveToken, "https://multiplayer.minecraft.net/")
 	if err != nil {
 		return nil, fmt.Errorf("request XBOX Live token: %w", err)
 	}
