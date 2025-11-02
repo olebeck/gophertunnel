@@ -416,12 +416,7 @@ func getXBLToken(ctx context.Context, dialer Dialer) (*auth.XBLToken, error) {
 	if err != nil {
 		return nil, fmt.Errorf("request Live Connect token: %w", err)
 	}
-<<<<<<< HEAD
 	xblToken, err = auth.RequestXBLToken(ctx, liveToken, "https://multiplayer.minecraft.net/")
-=======
-
-	xblToken, err := auth.RequestXBLToken(ctx, liveToken, "https://multiplayer.minecraft.net/")
->>>>>>> upstream/master
 	if err != nil {
 		return nil, fmt.Errorf("request XBOX Live token: %w", err)
 	}
