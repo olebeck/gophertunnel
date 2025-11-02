@@ -5,7 +5,6 @@ go 1.24
 require (
 	github.com/go-gl/mathgl v1.2.0
 	github.com/go-jose/go-jose/v4 v4.1.0
-	github.com/golang/snappy v1.0.0
 	github.com/google/uuid v1.6.0
 	github.com/klauspost/compress v1.18.1
 	github.com/pelletier/go-toml v1.9.5
