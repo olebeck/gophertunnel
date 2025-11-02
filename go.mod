@@ -7,7 +7,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.0
 	github.com/golang/snappy v1.0.0
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.1
 	github.com/pelletier/go-toml v1.9.5
 	github.com/sandertv/go-raknet v1.14.3-0.20250305181847-6af3e95113d6
 	github.com/tailscale/hujson v0.0.0-20250226034555-ec1d1c113d33
