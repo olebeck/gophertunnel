@@ -306,11 +306,6 @@ func (pack *pack) WriteTo(w io.Writer) (n int64, err error) {
 	}
 }
 
-// ReadFile reads a specific file from the Pack's content and returns its content as a byte slice.
-func (p *pack) ReadFile(filePath string) ([]byte, error) {
-	return fs.ReadFile(p, filePath)
-}
-
 // WithContentKey creates a copy of the pack and sets the encryption key to the key provided, after which the
 // new Pack is returned.
 func (pack pack) WithContentKey(key string) Pack {
