@@ -48,7 +48,7 @@ type Text struct {
 	PlatformChatID string
 	// FilteredMessage is a filtered version of Message with all the profanity removed. The client will use
 	// this over Message if this field is not empty and they have the "Filter Profanity" setting enabled.
-	FilteredMessage string
+	FilteredMessage protocol.Optional[string]
 }
 
 // ID ...
@@ -57,8 +57,18 @@ func (*Text) ID() uint32 {
 }
 
 func (pk *Text) Marshal(io protocol.IO) {
-	io.Uint8(&pk.TextType)
 	io.Bool(&pk.NeedsTranslation)
+	var categoryType uint8
+	switch pk.TextType {
+	case TextTypeRaw, TextTypeTip, TextTypeSystem, TextTypeObjectWhisper, TextTypeObjectAnnouncement, TextTypeObject:
+		categoryType = protocol.TextCategoryMessageOnly
+	case TextTypeChat, TextTypeWhisper, TextTypeAnnouncement:
+		categoryType = protocol.TextCategoryAuthoredMessage
+	default:
+		categoryType = protocol.TextCategoryMessageWithParameters
+	}
+	io.TextCategory(&categoryType)
+	io.Uint8(&pk.TextType)
 	switch pk.TextType {
 	case TextTypeChat, TextTypeWhisper, TextTypeAnnouncement:
 		io.String(&pk.SourceName)
@@ -69,7 +79,11 @@ func (pk *Text) Marshal(io protocol.IO) {
 		io.String(&pk.Message)
 		protocol.FuncSlice(io, &pk.Parameters, io.String)
 	}
+
+	if len(pk.Message) == 0 {
+		io.InvalidValue(pk.Message, "message", "string cannot be empty")
+	}
 	io.String(&pk.XUID)
 	io.String(&pk.PlatformChatID)
-	io.String(&pk.FilteredMessage)
+	protocol.OptionalFunc(io, &pk.FilteredMessage, io.String)
 }

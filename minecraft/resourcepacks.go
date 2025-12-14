@@ -258,24 +258,11 @@ func (r *defaultResourcepackHandler) OnResourcePackStack(pk *packet.ResourcePack
 	// We currently don't apply resource packs in any way, so instead we just check if all resource packs in
 	// the stacks are also downloaded.
 	for _, pack := range pk.TexturePacks {
-		for i, behaviourPack := range pk.BehaviourPacks {
-			if pack.UUID == behaviourPack.UUID {
-				// We had a behaviour pack with the same UUID as the texture pack, so we drop the texture
-				// pack and log it.
-				r.c.log.Warn("dropping behaviour pack due to a texture pack with the same UUID", "UUID", pack.UUID)
-				pk.BehaviourPacks = append(pk.BehaviourPacks[:i], pk.BehaviourPacks[i+1:]...)
-			}
-		}
 		if !r.hasPack(pack.UUID, pack.Version, false) {
 			return fmt.Errorf("texture pack {uuid=%v, version=%v} not downloaded", pack.UUID, pack.Version)
 		}
 	}
-	for _, pack := range pk.BehaviourPacks {
-		if !r.hasPack(pack.UUID, pack.Version, true) {
-			return fmt.Errorf("behaviour pack {uuid=%v, version=%v} not downloaded", pack.UUID, pack.Version)
-		}
-	}
-	r.c.expect(packet.IDItemRegistry, packet.IDStartGame)
+	r.c.expect(packet.IDStartGame)
 	_ = r.c.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseCompleted})
 	return nil
 }
@@ -333,12 +320,6 @@ func (r *defaultResourcepackHandler) OnResourcePackClientResponse(pk *packet.Res
 		pk := &packet.ResourcePackStack{BaseGameVersion: protocol.CurrentVersion, Experiments: []protocol.ExperimentData{{Name: "cameras", Enabled: true}}}
 		for _, pack := range r.resourcePacks {
 			resourcePack := protocol.StackResourcePack{UUID: pack.UUID().String(), Version: pack.Version()}
-			// If it has behaviours, add it to the behaviour pack list. If not, we add it to the texture packs
-			// list.
-			if pack.HasBehaviours() {
-				pk.BehaviourPacks = append(pk.BehaviourPacks, resourcePack)
-				continue
-			}
 			pk.TexturePacks = append(pk.TexturePacks, resourcePack)
 		}
 		for _, exempted := range exemptedPacks {
