@@ -15,11 +15,11 @@ import (
 
 // Client is an instance of the realms api with a token.
 type Client struct {
-	ClientVersion string
-	tokenSrc      oauth2.TokenSource
-	xblToken      *auth.XBLToken
-	baseUrl       string
-	httpClient    *http.Client
+	version    string
+	baseUrl    string
+	tokenSrc   oauth2.TokenSource
+	xblToken   *auth.XBLToken
+	httpClient *http.Client
 }
 
 // NewClient returns a new Client instance with the supplied token source for authentication.
@@ -32,10 +32,10 @@ func NewClient(src oauth2.TokenSource, httpClient *http.Client, baseUrl string) 
 		baseUrl = "https://pocket.realms.minecraft.net/"
 	}
 	return &Client{
-		tokenSrc:      src,
-		httpClient:    httpClient,
-		ClientVersion: protocol.CurrentVersion,
-		baseUrl:       baseUrl,
+		version:    protocol.CurrentVersion,
+		baseUrl:    baseUrl,
+		tokenSrc:   src,
+		httpClient: httpClient,
 	}
 }
 
@@ -208,7 +208,7 @@ func (c *Client) RequestWithMethod(ctx context.Context, path string, method stri
 	}
 
 	req.Header.Set("User-Agent", "MCPE/UWP")
-	req.Header.Set("Client-Version", c.ClientVersion)
+	req.Header.Set("Client-Version", c.version)
 	xbl, err := c.XboxToken(ctx)
 	if err != nil {
 		return nil, err
