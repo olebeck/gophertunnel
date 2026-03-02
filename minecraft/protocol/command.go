@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"strings"
+
 	"github.com/google/uuid"
 )
 
@@ -402,6 +404,7 @@ func commandPermissionToString(x byte) string {
 }
 
 func commandPermissionFromString(r IO, x *byte, s string) {
+	s = strings.ToLower(s)
 	switch s {
 	case "any":
 		*x = CommandPermissionLevelAny
