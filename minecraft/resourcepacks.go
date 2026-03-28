@@ -11,6 +11,7 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 	"github.com/sandertv/gophertunnel/minecraft/resource"
+	"github.com/sirupsen/logrus"
 )
 
 type ResourcePackHandler interface {
@@ -29,6 +30,11 @@ type defaultResourcepackHandler struct {
 	packQueue *resourcePackQueue
 	packMu    sync.Mutex
 
+	// packsToDownload keeps track of the UUID+version strings we most recently
+	// requested so that we can re-send them if the server asks for client cache
+	// status again (some servers do this before sending pack data).
+	packsToDownload []string
+
 	// resourcePacks is a slice of resource packs that the listener may hold. Each client will be asked to
 	// download these resource packs upon joining.
 	resourcePacks []resource.Pack
@@ -38,6 +44,14 @@ type defaultResourcepackHandler struct {
 	ignoredResourcePacks []exemptedResourcePack
 }
 
+// remainingPacks returns the number of packs still expected to download.
+func (r *defaultResourcepackHandler) remainingPacks() int {
+	if r.packQueue == nil {
+		return 0
+	}
+	return r.packQueue.packAmount
+}
+
 func (r *defaultResourcepackHandler) ResourcePacks() []resource.Pack {
 	return r.resourcePacks
 }
@@ -45,6 +59,13 @@ func (r *defaultResourcepackHandler) ResourcePacks() []resource.Pack {
 // OnResourcePacksInfo handles a ResourcePacksInfo packet sent by the server. The client responds by
 // sending the packs it needs downloaded.
 func (r *defaultResourcepackHandler) OnResourcePacksInfo(pk *packet.ResourcePacksInfo) error {
+	r.c.log.Info("OnResourcePacksInfo", "packs", len(pk.TexturePacks))
+	logrus.WithFields(logrus.Fields{
+		"component": "gophertunnel",
+		"event":     "resource_packs_info",
+		"packs":     len(pk.TexturePacks),
+	}).Debug("received ResourcePacksInfo")
+	// Reset any previous queue/requests and build a fresh one from the info packet.
 	// First create a new resource pack queue with the information in the packet so we can download them
 	// properly later.
 	r.packQueue = &resourcePackQueue{
@@ -52,6 +73,7 @@ func (r *defaultResourcepackHandler) OnResourcePacksInfo(pk *packet.ResourcePack
 		downloadingPacks: make(map[uuid.UUID]downloadingPack),
 		awaitingPacks:    make(map[uuid.UUID]*downloadingPack),
 	}
+	r.packsToDownload = nil
 	packsToDownload := make([]string, 0, len(pk.TexturePacks))
 
 	for index, pack := range pk.TexturePacks {
@@ -79,6 +101,13 @@ func (r *defaultResourcepackHandler) OnResourcePacksInfo(pk *packet.ResourcePack
 	}
 
 	if len(packsToDownload) != 0 {
+		r.packsToDownload = packsToDownload
+		r.c.log.Info("Requesting packs download", "packs", packsToDownload)
+		logrus.WithFields(logrus.Fields{
+			"component": "gophertunnel",
+			"event":     "request_packs_download",
+			"packs":     packsToDownload,
+		}).Debug("sending ResourcePackClientResponse PackResponseSendPacks")
 		r.c.expect(packet.IDResourcePackDataInfo, packet.IDResourcePackChunkData)
 		_ = r.c.WritePacket(&packet.ResourcePackClientResponse{
 			Response:        packet.PackResponseSendPacks,
@@ -99,6 +128,19 @@ func (r *defaultResourcepackHandler) OnResourcePackDataInfo(pk *packet.ResourceP
 	if err != nil {
 		return err
 	}
+	r.c.log.Info("OnResourcePackDataInfo",
+		"uuid", pk.UUID,
+		"size", pk.Size,
+		"chunk_size", pk.DataChunkSize,
+		"chunk_count", pk.ChunkCount)
+	logrus.WithFields(logrus.Fields{
+		"component":   "gophertunnel",
+		"event":       "resource_pack_data_info",
+		"uuid":        pk.UUID,
+		"size":        pk.Size,
+		"chunk_size":  pk.DataChunkSize,
+		"chunk_count": pk.ChunkCount,
+	}).Debug("received ResourcePackDataInfo")
 
 	pack, ok := r.packQueue.downloadingPacks[id]
 	if !ok {
@@ -217,6 +259,17 @@ func (r *defaultResourcepackHandler) OnResourcePackChunkData(pk *packet.Resource
 	if err != nil {
 		return err
 	}
+	r.c.log.Debug("OnResourcePackChunkData",
+		"uuid", pk.UUID,
+		"chunk_index", pk.ChunkIndex,
+		"data_len", len(pk.Data))
+	logrus.WithFields(logrus.Fields{
+		"component":   "gophertunnel",
+		"event":       "resource_pack_chunk_data",
+		"uuid":        pk.UUID,
+		"chunk_index": pk.ChunkIndex,
+		"data_len":    len(pk.Data),
+	}).Trace("received ResourcePackChunkData")
 	pack, ok := r.packQueue.awaitingPacks[pkUuid]
 	if !ok {
 		// We haven't received a ResourcePackDataInfo packet from the server, so we can't use this data to
@@ -244,6 +297,12 @@ func (r *defaultResourcepackHandler) nextResourcePackDownload() error {
 	if !ok {
 		return fmt.Errorf("no resource packs to download")
 	}
+	r.c.log.Info("nextResourcePackDownload", "uuid", pk.UUID)
+	logrus.WithFields(logrus.Fields{
+		"component": "gophertunnel",
+		"event":     "next_resource_pack_download",
+		"uuid":      pk.UUID,
+	}).Debug("sending ResourcePackDataInfo for next pack")
 	if err := r.c.WritePacket(pk); err != nil {
 		return fmt.Errorf("error sending resource pack data info packet: %v", err)
 	}
@@ -255,6 +314,12 @@ func (r *defaultResourcepackHandler) nextResourcePackDownload() error {
 // OnResourcePackStack handles a ResourcePackStack packet sent by the server. The stack defines the order
 // that resource packs are applied in.
 func (r *defaultResourcepackHandler) OnResourcePackStack(pk *packet.ResourcePackStack) error {
+	r.c.log.Info("OnResourcePackStack", "packs", len(pk.TexturePacks))
+	logrus.WithFields(logrus.Fields{
+		"component": "gophertunnel",
+		"event":     "resource_pack_stack",
+		"packs":     len(pk.TexturePacks),
+	}).Debug("received ResourcePackStack")
 	// We currently don't apply resource packs in any way, so instead we just check if all resource packs in
 	// the stacks are also downloaded.
 	for _, pack := range pk.TexturePacks {
@@ -355,4 +420,24 @@ func (r *defaultResourcepackHandler) GetResourcePacksInfo(texturePacksRequired b
 		pk.TexturePacks = append(pk.TexturePacks, texturePack)
 	}
 	return pk
+}
+
+// handleServerClientCacheStatus is invoked when the server unexpectedly sends a ClientCacheStatus
+// packet to a Dial()'d client. Some servers require a ResourcePackClientResponse immediately after.
+func (r *defaultResourcepackHandler) handleServerClientCacheStatus() error {
+	if r.packQueue != nil && r.packQueue.packAmount == 0 {
+		r.c.expect(packet.IDResourcePackStack)
+		return r.c.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseAllPacksDownloaded})
+	}
+	if len(r.packsToDownload) == 0 {
+		r.c.expect(packet.IDResourcePackStack)
+		return r.c.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseAllPacksDownloaded})
+	}
+
+	// Re-send the list of packs we still need so the server can start transferring them.
+	r.c.expect(packet.IDResourcePackDataInfo, packet.IDResourcePackChunkData)
+	return r.c.WritePacket(&packet.ResourcePackClientResponse{
+		Response:        packet.PackResponseSendPacks,
+		PacksToDownload: append([]string(nil), r.packsToDownload...),
+	})
 }

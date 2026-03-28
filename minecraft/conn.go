@@ -26,6 +26,7 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 	"github.com/sandertv/gophertunnel/minecraft/resource"
 	"github.com/sandertv/gophertunnel/minecraft/text"
+	"github.com/sirupsen/logrus"
 )
 
 // exemptedResourcePack is a resource pack that is exempted from being downloaded. These packs may be directly
@@ -671,6 +672,24 @@ func (conn *Conn) receive(data []byte) error {
 
 // handle tries to handle the incoming packetData.
 func (conn *Conn) handle(pkData *packetData) error {
+	// Some servers (e.g. Lifeboat) send an extra ClientCacheStatus packet to the client
+	// after ResourcePacksInfo. Process it immediately even if it was not in the expected
+	// sequence, otherwise it gets deferred and the login flow stalls.
+	if pkData.Header.PacketID == packet.IDClientCacheStatus && len(conn.acceptedProto) == 0 {
+		conn.log.Info("intercept ClientCacheStatus (client role)",
+			"expected", conn.expectedIDs.Load())
+		logrus.WithFields(logrus.Fields{
+			"component": "gophertunnel",
+			"event":     "intercept_client_cache_status",
+			"expected":  conn.expectedIDs.Load(),
+		}).Debug("handling ClientCacheStatus immediately")
+		pks, err := pkData.decode(conn)
+		if err != nil {
+			return err
+		}
+		return conn.handleMultiple(pks)
+	}
+
 	for _, id := range conn.expectedIDs.Load().([]uint32) {
 		if id == pkData.Header.PacketID {
 			// If the packet was expected, so we handle it right now.
@@ -937,11 +956,79 @@ func (conn *Conn) handleServerToClientHandshake(pk *packet.ServerToClientHandsha
 // has support for the client blob cache.
 func (conn *Conn) handleClientCacheStatus(pk *packet.ClientCacheStatus) error {
 	conn.cacheEnabled = pk.Enabled
-	conn.expect(packet.IDResourcePackClientResponse)
-	if err := conn.WritePacket(conn.ResourcePackHandler.GetResourcePacksInfo(conn.texturePacksRequired)); err != nil {
-		return fmt.Errorf("send ResourcePacksInfo: %w", err)
+	// If acceptedProto is set, this Conn is acting as a server; otherwise it is a client.
+	if len(conn.acceptedProto) > 0 {
+		conn.expect(packet.IDResourcePackClientResponse)
+		if err := conn.WritePacket(conn.ResourcePackHandler.GetResourcePacksInfo(conn.texturePacksRequired)); err != nil {
+			return fmt.Errorf("send ResourcePacksInfo: %w", err)
+		}
+		return nil
 	}
+
+	// Client-side: Some servers (e.g. Lifeboat) send ClientCacheStatus and expect us to
+	// immediately respond with ResourcePackClientResponse. Re-send the last request if we
+	// have one, otherwise signal that all packs are downloaded.
+	if h, ok := conn.ResourcePackHandler.(*defaultResourcepackHandler); ok {
+		conn.log.Info("handleClientCacheStatus (client role)",
+			"enabled", pk.Enabled,
+			"packs_to_download", len(h.packsToDownload),
+			"pack_queue_nil", h.packQueue == nil,
+			"pack_queue_remaining", h.remainingPacks())
+		logrus.WithFields(logrus.Fields{
+			"component":            "gophertunnel",
+			"event":                "handle_client_cache_status",
+			"enabled":              pk.Enabled,
+			"packs_to_download":    len(h.packsToDownload),
+			"pack_queue_nil":       h.packQueue == nil,
+			"pack_queue_remaining": h.remainingPacks(),
+		}).Debug("responding to ClientCacheStatus (client role)")
+		err := h.handleServerClientCacheStatus()
+		// After responding, see if any deferred packets now match.
+		conn.processDeferredPackets()
+		return err
+	}
+	// No-op if a custom handler is in use.
+	conn.log.Info("handleClientCacheStatus (client role) using custom ResourcePackHandler")
+	logrus.WithFields(logrus.Fields{
+		"component": "gophertunnel",
+		"event":     "handle_client_cache_status_custom_handler",
+	}).Debug("custom ResourcePackHandler in use")
 	return nil
+}
+
+// processDeferredPackets tries to handle any deferred packets that now match expected IDs.
+func (conn *Conn) processDeferredPackets() {
+	for {
+		pkData, ok := conn.takeDeferredPacket()
+		if !ok {
+			return
+		}
+		pks, err := pkData.decode(conn)
+		if err != nil {
+			conn.log.Error("process deferred decode", "err", err)
+			continue
+		}
+
+		handledAny := false
+		expected := conn.expectedIDs.Load().([]uint32)
+		for _, pk := range pks {
+			id := pk.ID()
+			for _, exp := range expected {
+				if id == exp {
+					if err := conn.handleMultiple([]packet.Packet{pk}); err != nil {
+						conn.log.Error("process deferred handle", "err", err)
+					}
+					handledAny = true
+					break
+				}
+			}
+			if !handledAny {
+				// Put it back if not handled.
+				conn.deferPacket(pkData)
+				return
+			}
+		}
+	}
 }
 
 // startGame sends a StartGame packet using the game data of the connection.
@@ -1120,6 +1207,7 @@ func (conn *Conn) handlePlayStatus(pk *packet.PlayStatus) error {
 		}
 		// The next packet we expect is the ResourcePacksInfo packet.
 		conn.expect(packet.IDResourcePacksInfo)
+		conn.processDeferredPackets()
 		return conn.Flush()
 	case packet.PlayStatusLoginFailedClient:
 		_ = conn.close(conn.closeErr("client outdated"))
