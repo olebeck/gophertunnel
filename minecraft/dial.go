@@ -277,7 +277,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		if !d.KeepXBLIdentityData {
 			clearXBLIdentityData(&conn.identityData)
 		}
-		request = login.EncodeOffline(conn.identityData, conn.clientData, chainKey, token, d.EnableLegacyAuth)
+		request = login.EncodeOffline(conn.identityData, conn.clientData, chainKey, d.EnableLegacyAuth)
 	} else {
 		switch conn.identityData.TitleID {
 		case "896928775": // Win10
