@@ -415,7 +415,7 @@ func (r *Reader) ItemDescriptorCount(i *ItemDescriptorCount) {
 func (r *Reader) ItemInstance(i *ItemInstance) {
 	x := &i.Stack
 	r.Varint32(&x.NetworkID)
-	if x.NetworkID == 0 {
+	if x.NetworkID <= 0 {
 		// The item was air, so there is no more data we should read for the item instance. After all, air
 		// items aren't really anything.
 		x.MetadataValue, x.Count, x.BlockRuntimeID, i.StackNetworkID = 0, 0, 0, 0
