@@ -26,6 +26,7 @@ type Reader struct {
 	}
 	shieldID      int32
 	limitsEnabled bool
+	buf           [8]byte
 }
 
 // NewReader creates a new Reader using the io.ByteReader passed as underlying source to read bytes from.
@@ -332,8 +333,8 @@ func (r *Reader) GameRuleLegacy(x *GameRule) {
 }
 
 // EntityMetadata reads an entity metadata map from the underlying buffer into map x.
-func (r *Reader) EntityMetadata(x *map[uint32]any) {
-	*x = map[uint32]any{}
+func (r *Reader) EntityMetadata(x *EntityMetadata) {
+	*x = EntityMetadata{}
 
 	var count uint32
 	r.Varuint32(&count)
@@ -467,8 +468,75 @@ func (r *Reader) ItemInstance(i *ItemInstance) {
 	FuncSliceUint32Length(bufReader, &x.CanBreak, bufReader.StringUTF)
 
 	if x.NetworkID == bufReader.shieldID {
-		var blockingTick int64
-		bufReader.Int64(&blockingTick)
+		bufReader.Int64(&x.BlockingTick)
+	}
+}
+
+// ItemInstanceNew reads an ItemInstance i from the underlying buffer in the new format.
+func (r *Reader) ItemInstanceNew(i *ItemInstance) {
+	x := &i.Stack
+	var id int16
+	r.Int16(&id)
+	x.NetworkID = int32(id)
+
+	r.Uint16(&x.Count)
+	r.Varuint32(&x.MetadataValue)
+
+	var hasNetID bool
+	r.Bool(&hasNetID)
+
+	if hasNetID {
+		var empty uint32
+		r.Varuint32(&empty)
+		r.Varint32(&i.StackNetworkID)
+	} else {
+		i.StackNetworkID = 0
+	}
+
+	var runtimeID uint32
+	r.Varuint32(&runtimeID)
+	x.BlockRuntimeID = int32(runtimeID)
+
+	var extraData []byte
+	r.ByteSlice(&extraData)
+
+	if len(extraData) == 0 {
+		x.NBTData, x.CanBePlacedOn, x.CanBreak = nil, nil, nil
+		x.BlockingTick = 0
+		return
+	}
+
+	buf := bytes.NewBuffer(extraData)
+	bufReader := NewReader(buf, r.shieldID, r.limitsEnabled)
+
+	var length int16
+	bufReader.Int16(&length)
+
+	switch length {
+	case 0:
+		x.NBTData = nil
+	case -1:
+		var version uint8
+		bufReader.Uint8(&version)
+
+		switch version {
+		case 1:
+			bufReader.NBT(&x.NBTData, nbt.LittleEndian)
+		default:
+			bufReader.UnknownEnumOption(version, "item user data version")
+			return
+		}
+	default:
+		bufReader.NBT(&x.NBTData, nbt.LittleEndian)
+	}
+
+	FuncSliceUint32Length(bufReader, &x.CanBePlacedOn, bufReader.StringUTF)
+	FuncSliceUint32Length(bufReader, &x.CanBreak, bufReader.StringUTF)
+
+	if x.NetworkID == bufReader.shieldID {
+		bufReader.Int64(&x.BlockingTick)
+	} else {
+		x.BlockingTick = 0
 	}
 }
 
@@ -517,8 +585,7 @@ func (r *Reader) Item(x *ItemStack) {
 	FuncSliceUint32Length(bufReader, &x.CanBreak, bufReader.StringUTF)
 
 	if x.NetworkID == bufReader.shieldID {
-		var blockingTick int64
-		bufReader.Int64(&blockingTick)
+		bufReader.Int64(&x.BlockingTick)
 	}
 }
 

@@ -606,6 +606,9 @@ const (
 	SoundEventItemNetheriteSpearUse
 	SoundEventPauseGrowth
 	SoundEventResetGrowth
+	SoundEventPushedByPlayer
+	SoundEventBounce
+	SoundEventUndefined
 )
 
 // LevelSoundEvent is sent by the server to make any kind of built-in sound heard to a player. It is sent to,
@@ -636,6 +639,9 @@ type LevelSoundEvent struct {
 	// different sessions of the same world, but most servers simply fill the runtime ID of the entity out for
 	// this field.
 	EntityUniqueID int64
+	// FireAtPosition is the position in the same world at which the event should fire. If this is not present,
+	// the position entity will be used instead.
+	FireAtPosition protocol.Optional[mgl32.Vec3]
 }
 
 // ID ...
@@ -651,4 +657,5 @@ func (pk *LevelSoundEvent) Marshal(io protocol.IO) {
 	io.Bool(&pk.BabyMob)
 	io.Bool(&pk.DisableRelativeVolume)
 	io.Int64(&pk.EntityUniqueID)
+	protocol.OptionalFunc(io, &pk.FireAtPosition, io.Vec3)
 }

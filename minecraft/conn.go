@@ -189,6 +189,9 @@ type Conn struct {
 	// texturePacksRequired specifies if clients that join must accept the texture pack in order for them to
 	// be able to join the server. If they don't accept, they can only leave the server.
 	texturePacksRequired bool
+	// forceDisableVibrantVisuals specifies whether the connection is forced to have vibrant visuals disabled.
+	forceDisableVibrantVisuals bool
+	//packQueue                  *resourcePackQueue
 	// downloadResourcePack is an optional function passed to a Dial() call. If set, each resource pack received
 	// from the server will call this function to see if it should be downloaded or not.
 	downloadResourcePack func(id uuid.UUID, version string, currentPack, totalPacks int) bool
@@ -765,6 +768,8 @@ func (conn *Conn) handlePacket(pk packet.Packet) error {
 		return conn.handleItemRegistry(pk)
 	case *packet.ChunkRadiusUpdated:
 		return conn.handleChunkRadiusUpdated(pk)
+	case *packet.DimensionData:
+		return conn.handleDimensionData(pk)
 	}
 	return nil
 }
@@ -857,9 +862,12 @@ func (conn *Conn) handleLogin(pk *packet.Login) error {
 // handleClientToServerHandshake handles an incoming ClientToServerHandshake packet.
 func (conn *Conn) handleClientToServerHandshake() error {
 	// The next expected packet is a resource pack client response.
-	conn.expect(packet.IDClientCacheStatus)
+	conn.expect(packet.IDResourcePackClientResponse, packet.IDClientCacheStatus)
 	if err := conn.WritePacket(&packet.PlayStatus{Status: packet.PlayStatusLoginSuccess}); err != nil {
 		return fmt.Errorf("send PlayStatus (Status=LoginSuccess): %w", err)
+	}
+	if err := conn.WritePacket(conn.ResourcePackHandler.GetResourcePacksInfo(conn.texturePacksRequired)); err != nil {
+		return fmt.Errorf("send ResourcePacksInfo: %w", err)
 	}
 	return nil
 }
@@ -937,16 +945,164 @@ func (conn *Conn) handleServerToClientHandshake(pk *packet.ServerToClientHandsha
 // has support for the client blob cache.
 func (conn *Conn) handleClientCacheStatus(pk *packet.ClientCacheStatus) error {
 	conn.cacheEnabled = pk.Enabled
-	conn.expect(packet.IDResourcePackClientResponse)
-	if err := conn.WritePacket(conn.ResourcePackHandler.GetResourcePacksInfo(conn.texturePacksRequired)); err != nil {
-		return fmt.Errorf("send ResourcePacksInfo: %w", err)
+	return nil
+}
+
+/*
+// handleResourcePacksInfo handles a ResourcePacksInfo packet sent by the server. The client responds by
+// sending the packs it needs downloaded.
+func (conn *Conn) handleResourcePacksInfo(pk *packet.ResourcePacksInfo) error {
+	// First create a new resource pack queue with the information in the packet so we can download them
+	// properly later.
+	totalPacks := len(pk.TexturePacks)
+	conn.packQueue = &resourcePackQueue{
+		packAmount:       totalPacks,
+		downloadingPacks: make(map[string]downloadingPack),
+		awaitingPacks:    make(map[string]*downloadingPack),
+	}
+	packsToDownload := make([]string, 0, totalPacks)
+
+	for index, pack := range pk.TexturePacks {
+		id := pack.UUID.String()
+		if _, ok := conn.packQueue.downloadingPacks[id]; ok {
+			conn.log.Warn("handle ResourcePacksInfo: duplicate texture pack", "UUID", pack.UUID)
+			conn.packQueue.packAmount--
+			continue
+		}
+		if conn.downloadResourcePack != nil && !conn.downloadResourcePack(uuid.MustParse(id), pack.Version, index, totalPacks) {
+			conn.ignoredResourcePacks = append(conn.ignoredResourcePacks, exemptedResourcePack{
+				uuid:    id,
+				version: pack.Version,
+			})
+			conn.packQueue.packAmount--
+			continue
+		}
+		// This UUID_Version is a hack Mojang put in place.
+		packsToDownload = append(packsToDownload, id+"_"+pack.Version)
+		conn.packQueue.downloadingPacks[id] = downloadingPack{
+			size:       pack.Size,
+			buf:        bytes.NewBuffer(make([]byte, 0, pack.Size)),
+			newFrag:    make(chan []byte),
+			contentKey: pack.ContentKey,
+		}
+	}
+
+	if len(packsToDownload) != 0 {
+		conn.expect(packet.IDResourcePackDataInfo, packet.IDResourcePackChunkData)
+		_ = conn.WritePacket(&packet.ResourcePackClientResponse{
+			Response:        packet.PackResponseSendPacks,
+			PacksToDownload: packsToDownload,
+		})
+		return nil
+	}
+	conn.expect(packet.IDResourcePackStack)
+
+	_ = conn.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseAllPacksDownloaded})
+	return nil
+}
+
+// handleResourcePackStack handles a ResourcePackStack packet sent by the server. The stack defines the order
+// that resource packs are applied in.
+func (conn *Conn) handleResourcePackStack(pk *packet.ResourcePackStack) error {
+	// We currently don't apply resource packs in any way, so instead we just check if all resource packs in
+	// the stacks are also downloaded.
+	for _, pack := range pk.TexturePacks {
+		if !conn.hasPack(pack.UUID, pack.Version, false) {
+			return fmt.Errorf("texture pack (UUID=%v, version=%v) not downloaded", pack.UUID, pack.Version)
+		}
+	}
+	conn.expect(packet.IDDimensionData, packet.IDStartGame)
+	_ = conn.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseCompleted})
+	return nil
+}
+
+// hasPack checks if the connection has a resource pack downloaded with the UUID and version passed, provided
+// the pack either has or does not have behaviours in it.
+func (conn *Conn) hasPack(uuid string, version string, hasBehaviours bool) bool {
+	for _, exempted := range exemptedPacks {
+		if exempted.uuid == uuid && exempted.version == version {
+			// The server may send this resource pack on the stack without sending it in the info, as the client
+			// always has it downloaded.
+			return true
+		}
+	}
+	conn.packMu.Lock()
+	defer conn.packMu.Unlock()
+
+	for _, ignored := range conn.ignoredResourcePacks {
+		if ignored.uuid == uuid && ignored.version == version {
+			return true
+		}
+	}
+	for _, pack := range conn.resourcePacks {
+		if pack.UUID().String() == uuid && pack.Version() == version && pack.HasBehaviours() == hasBehaviours {
+			return true
+		}
+	}
+	return false
+}
+
+// packChunkSize is the size of a single chunk of data from a resource pack: 512 kB or 0.5 MB
+const packChunkSize = 1024 * 128
+
+// handleResourcePackClientResponse handles an incoming resource pack client response packet. The packet is
+// handled differently depending on the response.
+func (conn *Conn) handleResourcePackClientResponse(pk *packet.ResourcePackClientResponse) error {
+	switch pk.Response {
+	case packet.PackResponseRefused:
+		// Even though this response is never sent, we handle it appropriately in case it is changed to work
+		// correctly again.
+		return conn.close(conn.closeErr("resource pack refused"))
+	case packet.PackResponseSendPacks:
+		packs := pk.PacksToDownload
+		conn.packQueue = &resourcePackQueue{packs: conn.resourcePacks}
+		if err := conn.packQueue.Request(packs); err != nil {
+			return fmt.Errorf("lookup resource packs by UUID: %w", err)
+		}
+		// Proceed with the first resource pack download. We run all downloads in sequence rather than in
+		// parallel, as it's less prone to packet loss.
+		if err := conn.nextResourcePackDownload(); err != nil {
+			return err
+		}
+	case packet.PackResponseAllPacksDownloaded:
+		pk := &packet.ResourcePackStack{BaseGameVersion: protocol.CurrentVersion, Experiments: []protocol.ExperimentData{{Name: "cameras", Enabled: true}}}
+		for _, pack := range conn.resourcePacks {
+			resourcePack := protocol.StackResourcePack{UUID: pack.UUID().String(), Version: pack.Version()}
+			pk.TexturePacks = append(pk.TexturePacks, resourcePack)
+		}
+		for _, exempted := range exemptedPacks {
+			pk.TexturePacks = append(pk.TexturePacks, protocol.StackResourcePack{
+				UUID:    exempted.uuid,
+				Version: exempted.version,
+			})
+		}
+		if err := conn.WritePacket(pk); err != nil {
+			return fmt.Errorf("send ResourcePackStack: %w", err)
+		}
+	case packet.PackResponseCompleted:
+		conn.loggedIn = true
+	default:
+		return fmt.Errorf("unknown ResourcePackClientResponse response type %v", pk.Response)
 	}
 	return nil
 }
+*/
 
 // startGame sends a StartGame packet using the game data of the connection.
 func (conn *Conn) startGame() {
 	data := conn.gameData
+	if len(data.Dimensions) > 0 {
+		_ = conn.WritePacket(&packet.DimensionData{Definitions: data.Dimensions})
+	}
+	_ = conn.WritePacket(&packet.JigsawStructureData{
+		StructureData: map[string]any{
+			"processors":     make([]map[string]any, 0),
+			"template_pools": make([]map[string]any, 0),
+			"jigsaws":        make([]map[string]any, 0),
+			"structure_sets": make([]map[string]any, 0),
+		},
+	})
+	_ = conn.WritePacket(&packet.VoxelShapes{})
 	_ = conn.WritePacket(&packet.StartGame{
 		Difficulty:                   data.Difficulty,
 		EntityUniqueID:               data.EntityUniqueID,
@@ -996,6 +1152,163 @@ func (conn *Conn) startGame() {
 	conn.expect(packet.IDRequestChunkRadius, packet.IDSetLocalPlayerAsInitialised)
 }
 
+/*
+// nextResourcePackDownload moves to the next resource pack to download and sends a resource pack data info
+// packet with information about it.
+func (conn *Conn) nextResourcePackDownload() error {
+	pk, ok := conn.packQueue.NextPack()
+	if !ok {
+		return fmt.Errorf("no resource packs to download")
+	}
+	if err := conn.WritePacket(pk); err != nil {
+		return fmt.Errorf("send ResourcePackDataInfo: %w", err)
+	}
+	// Set the next expected packet to ResourcePackChunkRequest packets.
+	conn.expect(packet.IDResourcePackChunkRequest)
+	return nil
+}
+
+// handleResourcePackDataInfo handles a resource pack data info packet, which initiates the downloading of the
+// pack by the client.
+func (conn *Conn) handleResourcePackDataInfo(pk *packet.ResourcePackDataInfo) error {
+	id := strings.Split(pk.UUID, "_")[0]
+
+	pack, ok := conn.packQueue.downloadingPacks[id]
+	if !ok {
+		// We either already downloaded the pack or we got sent an invalid UUID, that did not match any pack
+		// sent in the ResourcePacksInfo packet.
+		return fmt.Errorf("handle ResourcePackDataInfo: unknown pack (UUID=%v)", id)
+	}
+	if pack.size != pk.Size {
+		// Size mismatch: The ResourcePacksInfo packet had a size for the pack that did not match with the
+		// size sent here.
+		conn.log.Warn("handle ResourcePackDataInfo: pack had a different size in ResourcePacksInfo than in ResourcePackDataInfo", "UUID", id)
+		pack.size = pk.Size
+	}
+
+	// Remove the resource pack from the downloading packs and add it to the awaiting packets.
+	delete(conn.packQueue.downloadingPacks, id)
+	conn.packQueue.awaitingPacks[id] = &pack
+
+	pack.chunkSize = pk.DataChunkSize
+
+	// The client calculates the chunk count by itself: You could in theory send a chunk count of 0 even
+	// though there's data, and the client will still download normally.
+	chunkCount := uint32(pk.Size / uint64(pk.DataChunkSize))
+	if pk.Size%uint64(pk.DataChunkSize) != 0 {
+		chunkCount++
+	}
+
+	idCopy := pk.UUID
+	go func() {
+		for i := uint32(0); i < chunkCount; i++ {
+			_ = conn.WritePacket(&packet.ResourcePackChunkRequest{
+				UUID:       idCopy,
+				ChunkIndex: i,
+			})
+			select {
+			case <-conn.ctx.Done():
+				return
+			case frag := <-pack.newFrag:
+				// Write the fragment to the full buffer of the downloading resource pack.
+				_, _ = pack.buf.Write(frag)
+			}
+		}
+		conn.packMu.Lock()
+		defer conn.packMu.Unlock()
+
+		if pack.buf.Len() != int(pack.size) {
+			conn.log.Error(fmt.Sprintf("download resource pack: incorrect resource pack size: expected %v, got %v", pack.size, pack.buf.Len()), "UUID", id)
+			return
+		}
+		// First parse the resource pack from the total byte buffer we obtained.
+		newPack, err := resource.Read(pack.buf)
+		if err != nil {
+			conn.log.Error("download resource pack: invalid full resource pack data: "+err.Error(), "UUID", id)
+			return
+		}
+		conn.packQueue.packAmount--
+		// Finally we add the resource to the resource packs slice.
+		conn.resourcePacks = append(conn.resourcePacks, newPack.WithContentKey(pack.contentKey))
+		if conn.packQueue.packAmount == 0 {
+			conn.expect(packet.IDResourcePackStack)
+			_ = conn.WritePacket(&packet.ResourcePackClientResponse{Response: packet.PackResponseAllPacksDownloaded})
+		}
+	}()
+	return nil
+}
+
+// handleResourcePackChunkData handles a resource pack chunk data packet, which holds a fragment of a resource
+// pack that is being downloaded.
+func (conn *Conn) handleResourcePackChunkData(pk *packet.ResourcePackChunkData) error {
+	pk.UUID = strings.Split(pk.UUID, "_")[0]
+	pack, ok := conn.packQueue.awaitingPacks[pk.UUID]
+	if !ok {
+		// We haven't received a ResourcePackDataInfo packet from the server, so we can't use this data to
+		// download a resource pack.
+		return fmt.Errorf("chunk data for resource pack that was not being downloaded")
+	}
+	lastData := pack.buf.Len()+int(pack.chunkSize) >= int(pack.size)
+	if !lastData && uint32(len(pk.Data)) != pack.chunkSize {
+		// The chunk data didn't have the full size and wasn't the last data to be sent for the resource pack,
+		// meaning we got too little data.
+		return fmt.Errorf("expected chunk size %v, got %v", pack.chunkSize, len(pk.Data))
+	}
+	if pk.ChunkIndex != pack.expectedIndex {
+		return fmt.Errorf("expected chunk index %v, got %v", pack.expectedIndex, pk.ChunkIndex)
+	}
+	pack.expectedIndex++
+	pack.newFrag <- pk.Data
+	return nil
+}
+
+// handleResourcePackChunkRequest handles a resource pack chunk request, which requests a part of the resource
+// pack to be downloaded.
+func (conn *Conn) handleResourcePackChunkRequest(pk *packet.ResourcePackChunkRequest) error {
+	current := conn.packQueue.currentPack
+	if current.UUID().String() != pk.UUID {
+		return fmt.Errorf("expected pack UUID %v, but got %v", current.UUID(), pk.UUID)
+	}
+	if conn.packQueue.currentOffset != uint64(pk.ChunkIndex)*packChunkSize {
+		return fmt.Errorf("expected pack UUID %v, but got %v", conn.packQueue.currentOffset/packChunkSize, pk.ChunkIndex)
+	}
+	response := &packet.ResourcePackChunkData{
+		UUID:       pk.UUID,
+		ChunkIndex: pk.ChunkIndex,
+		DataOffset: conn.packQueue.currentOffset,
+		Data:       make([]byte, packChunkSize),
+	}
+	conn.packQueue.currentOffset += packChunkSize
+	// We read the data directly into the response's data.
+	if n, err := current.ReadAt(response.Data, int64(response.DataOffset)); err != nil {
+		// If we hit an EOF, we don't need to return an error, as we've simply reached the end of the content
+		// AKA the last chunk.
+		if err != io.EOF {
+			return fmt.Errorf("read resource pack chunk: %w", err)
+		}
+		response.Data = response.Data[:n]
+
+		defer func() {
+			if !conn.packQueue.AllDownloaded() {
+				_ = conn.nextResourcePackDownload()
+			} else {
+				conn.expect(packet.IDResourcePackClientResponse)
+			}
+		}()
+	}
+	if err := conn.WritePacket(response); err != nil {
+		return fmt.Errorf("send ResourcePackChunkData: %w", err)
+	}
+
+	return nil
+}
+*/
+
+func (conn *Conn) handleDimensionData(pk *packet.DimensionData) error {
+	conn.gameData.Dimensions = pk.Definitions
+	return nil
+}
+
 // handleStartGame handles an incoming StartGame packet. It is the signal that the player has been added to a
 // world, and it obtains most of its dedicated properties.
 func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
@@ -1042,6 +1355,7 @@ func (conn *Conn) handleStartGame(pk *packet.StartGame) error {
 		UseBlockNetworkIDHashes:      pk.UseBlockNetworkIDHashes,
 		ServerAuthoritativeSound:     pk.ServerAuthoritativeSound,
 		PropertyData:                 pk.PropertyData,
+		Dimensions:                   conn.gameData.Dimensions,
 	}
 	return nil
 }
