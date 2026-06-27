@@ -11,6 +11,8 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/internal"
 )
 
+const maxPooledEncoderBufferCap = 1 << 20
+
 // Encoder handles the encoding of Minecraft packets that are sent to an io.Writer. The packets are compressed
 // and optionally encoded before they are sent to the io.Writer.
 type Encoder struct {
@@ -31,13 +33,13 @@ type Encoder struct {
 // sent with a single call to io.Writer.Write().
 func NewEncoder(w io.Writer) *Encoder {
 	var batch []byte
-	if b, ok := w.(batchHeader); ok {
+	if b, ok := w.(BatchHeaderer); ok {
 		batch = b.BatchHeader()
 	} else {
 		batch = []byte{header}
 	}
 	var disableEncryption bool
-	if d, ok := w.(encryptionDisabler); ok {
+	if d, ok := w.(EncryptionDisabler); ok {
 		disableEncryption = d.DisableEncryption()
 	}
 	return &Encoder{
@@ -45,25 +47,6 @@ func NewEncoder(w io.Writer) *Encoder {
 		header:            batch,
 		disableEncryption: disableEncryption,
 	}
-}
-
-// batchHeader can be implemented by underlying transport connection provided to Encoder and Decoder
-// to specify the initial bytes that should appear at the beginning of packet data in wire.
-type batchHeader interface {
-	// BatchHeader returns initial bytes that should be appended to the produced data
-	// in Encoder and Decoder. It can be an empty slice if nothing is expected at the beginning.
-	BatchHeader() []byte
-}
-
-// encryptionDisabler may be implemented by the underlying transport connection to
-// prevent encryption from being enabled in Encoder and Decoder.
-//
-// Disabling encryption is strongly discouraged, as it removes protection against
-// replay attacks during login. Use only if you fully understand the implications.
-type encryptionDisabler interface {
-	// DisableEncryption reports whether encryption should be disabled for both
-	// Encoder and Decoder.
-	DisableEncryption() bool
 }
 
 // EnableEncryption enables encryption for the Encoder using the secret key bytes passed. Each packet sent
@@ -93,7 +76,7 @@ func (encoder *Encoder) Encode(packets [][]byte) error {
 		// Reset the buffer, so we can return it to the buffer pool safely.
 		buf.Reset()
 		internal.BufferPool.Put(buf)
-		if compressedBuf != nil {
+		if compressedBuf != nil && compressedBuf.Cap() <= maxPooledEncoderBufferCap {
 			compressedBuf.Reset()
 			internal.BufferPool.Put(compressedBuf)
 		}
@@ -123,18 +106,25 @@ func (encoder *Encoder) Encode(packets [][]byte) error {
 		if len(batch) < encoder.compressionThreshold {
 			data[len(encoder.header)] = byte(NopCompression.EncodeCompression())
 		} else {
-			compressed, err := compression.Compress(batch)
-			if err != nil {
-				return fmt.Errorf("compress batch: %w", err)
-			}
-
 			compressedBuf = internal.BufferPool.Get().(*bytes.Buffer)
 			_, _ = compressedBuf.Write(encoder.header)
 			_ = compressedBuf.WriteByte(byte(compression.EncodeCompression()))
-			if _, err := compressedBuf.Write(compressed); err != nil {
-				return fmt.Errorf("compress batch: write compressed payload: %w", err)
+			var err error
+			if appender, ok := compression.(appendCompression); ok {
+				if n := appender.MaxCompressedLen(len(batch)); n > 0 {
+					compressedBuf.Grow(n)
+				}
+				dst := compressedBuf.Bytes()
+				data, err = appender.CompressAppend(dst, batch)
+			} else {
+				dst := compressedBuf.Bytes()
+				var compressed []byte
+				compressed, err = compression.Compress(batch)
+				data = append(dst, compressed...)
 			}
-			data = compressedBuf.Bytes()
+			if err != nil {
+				return fmt.Errorf("compress batch: %w", err)
+			}
 		}
 	}
 
