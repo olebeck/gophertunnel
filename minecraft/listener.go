@@ -11,6 +11,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/netip"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -41,6 +42,10 @@ type ListenConfig struct {
 	// verification will be done to ensure that the player connecting is authenticated using their XBOX Live
 	// account.
 	AuthenticationDisabled bool
+
+	// DisablePacketEncryption disables packet encryption for accepted connections.
+	// Authentication is unaffected. Only use this on trusted networks.
+	DisablePacketEncryption bool
 
 	// MaximumPlayers is the maximum amount of players accepted in the server. If non-zero, players that
 	// attempt to join while the server is full will be kicked during login. If zero, the maximum player count
@@ -98,6 +103,9 @@ type ListenConfig struct {
 	// If set, it will be called before sending the ResourcePacksInfo packet. The returned resource packs
 	// will be forwarded to the client in place of the Listener's current ones.
 	FetchResourcePacks func(identityData login.IdentityData, clientData login.ClientData, current []*resource.Pack) []*resource.Pack
+	// ResourcePackDelivery controls how resource pack data is sent to clients. The zero value keeps the
+	// conservative default chunk size and pacing.
+	ResourcePackDelivery ResourcePackDeliveryConfig
 
 	// PacketFunc is called whenever a packet is read from or written to a connection returned when using
 	// Listener.Accept. It includes packets that are otherwise covered in the connection sequence, such as the
@@ -111,6 +119,14 @@ type ListenConfig struct {
 	// MaxDecompressedLen is the maximum length of a decompressed packet to prevent potential exploits. If 0,
 	// the default value is 16MB (16 * 1024 * 1024). Setting this to a negative integer disables the limit.
 	MaxDecompressedLen int
+
+	// Allow filters what connections are allowed to connect to the Server. The
+	// address, identity data, and client data of the connection are passed. If
+	// Allow returns false, the connection is closed with the string returned as
+	// the disconnect message. WARNING: Use the client data at your own risk, it
+	// cannot be trusted because it can be freely changed by the player
+	// connecting.
+	Allow func(addr net.Addr, identityData login.IdentityData, clientData login.ClientData) (string, bool)
 }
 
 // Listener implements a Minecraft listener on top of an unspecific net.Listener. It abstracts away the
@@ -141,6 +157,22 @@ type Listener struct {
 // If the host in the address parameter is empty or a literal unspecified IP address, Listen listens on all
 // available unicast and anycast IP addresses of the local system.
 func (cfg ListenConfig) Listen(network string, address string) (*Listener, error) {
+	if cfg.ErrorLog == nil {
+		cfg.ErrorLog = slog.New(internal.DiscardHandler{})
+	}
+	cfg.ErrorLog = cfg.ErrorLog.With("src", "listener")
+	n, ok := networkByID(network, cfg.ErrorLog)
+	if !ok {
+		return nil, fmt.Errorf("listen: no network under id %v", network)
+	}
+	return cfg.ListenNetwork(n, address)
+}
+
+// ListenNetwork announces on the local network address using the Network implementation passed.
+// The network is typically [RakNet]. If the host in the address parameter is empty or a literal
+// unspecified IP address, ListenNetwork listens on all available unicast and anycast IP addresses of
+// the local system.
+func (cfg ListenConfig) ListenNetwork(network Network, address string) (*Listener, error) {
 	if cfg.ErrorLog == nil {
 		cfg.ErrorLog = slog.New(internal.DiscardHandler{})
 	}
@@ -183,12 +215,7 @@ func (cfg ListenConfig) Listen(network string, address string) (*Listener, error
 		}
 	}
 
-	n, ok := networkByID(network, cfg.ErrorLog)
-	if !ok {
-		return nil, fmt.Errorf("listen: no network under id %v", network)
-	}
-
-	netListener, err := n.Listen(address)
+	netListener, err := network.Listen(address)
 	if err != nil {
 		return nil, err
 	}
@@ -339,10 +366,18 @@ func (listener *Listener) PlayerCount() int {
 // updatePongData updates the pong data of the listener using the current only players, maximum players and
 // server name of the listener, provided the listener isn't currently hijacking the pong of another server.
 func (listener *Listener) updatePongData() {
-	s := listener.status()
+	var (
+		s    = listener.status()
+		port uint16
+	)
+	if a, ok := listener.Addr().(interface {
+		AddrPort() netip.AddrPort
+	}); ok {
+		port = a.AddrPort().Port()
+	}
 	listener.listener.PongData([]byte(fmt.Sprintf("MCPE;%v;%v;%v;%v;%v;%v;%v;%v;%v;%v;%v;%v;",
 		s.ServerName, protocol.CurrentProtocol, protocol.CurrentVersion, s.PlayerCount, s.MaxPlayers,
-		listener.listener.ID(), s.ServerSubName, "Creative", 1, listener.Addr().(*net.UDPAddr).Port, listener.Addr().(*net.UDPAddr).Port, 0,
+		listener.listener.ID(), s.ServerSubName, "Creative", 1, port, port, 0,
 	)))
 }
 
@@ -386,12 +421,14 @@ func (listener *Listener) createConn(netConn net.Conn) {
 	listener.packsMu.RUnlock()
 
 	conn := newConn(netConn, listener.key, listener.cfg.ErrorLog, proto{}, listener.cfg.FlushRate, true)
+	conn.disableEncryption = conn.disableEncryption || listener.cfg.DisablePacketEncryption
 	conn.acceptedProto = append(listener.cfg.AcceptedProtocols, proto{})
 	conn.compression = listener.cfg.Compression
 	conn.compressionSelector = listener.cfg.CompressionSelector
 	conn.compressionThreshold = listener.cfg.CompressionThreshold
 	conn.maxDecompressedLen = listener.cfg.MaxDecompressedLen
 	conn.pool = conn.proto.Packets(true)
+	conn.allow = listener.cfg.Allow
 
 	conn.onClientData = listener.cfg.OnClientData
 	conn.packetFunc = listener.cfg.PacketFunc
@@ -402,6 +439,7 @@ func (listener *Listener) createConn(netConn net.Conn) {
 		c:             conn,
 	}
 	conn.fetchResourcePacks = listener.cfg.FetchResourcePacks
+	conn.resourcePackDelivery = listener.cfg.ResourcePackDelivery.normalized()
 	conn.gameData.WorldName = listener.status().ServerName
 	conn.authEnabled = !listener.cfg.AuthenticationDisabled
 	conn.verifier = listener.verifier
