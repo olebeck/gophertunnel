@@ -164,7 +164,7 @@ func Parse(request []byte, verifier *oidc.IDTokenVerifier) (IdentityData, Client
 	if err := parseFullClaim(req.RawToken, key, &cData); err != nil {
 		return iData, cData, res, fmt.Errorf("parse client data: %w", err)
 	}
-	if strings.Count(cData.ServerAddress, ":") > 1 && cData.ServerAddress[0] != '[' {
+	if !strings.Contains(cData.ServerAddress, "://") && strings.Count(cData.ServerAddress, ":") > 1 && cData.ServerAddress[0] != '[' {
 		// IPv6: We can't net.ResolveUDPAddr this directly, because Mojang does
 		// not always put [] around the IP if it isn't added by the player in
 		// the External Server adding screen. We'll have to do this manually:
@@ -221,7 +221,7 @@ func parseLegacyChain(chain []string, now time.Time) (IdentityData, *ecdsa.Publi
 		if err := c.Validate(jwt.Expected{Time: now}); err != nil {
 			return IdentityData{}, nil, false, fmt.Errorf("validate token 0: %w", err)
 		}
-		authenticated = bytes.Equal(key.X.Bytes(), mojangKey.X.Bytes()) && bytes.Equal(key.Y.Bytes(), mojangKey.Y.Bytes())
+		authenticated = key.Equal(mojangKey)
 
 		if err := parseFullClaim(chain[1], key, &c); err != nil {
 			return IdentityData{}, nil, false, fmt.Errorf("parse token 1: %w", err)
@@ -405,6 +405,7 @@ func EncodeOffline(identityData IdentityData, data ClientData, key *ecdsa.Privat
 		req.Certificate = certificate{Chain: chain{chainJWT}}
 		req.Legacy = true
 	} else {
+		claims.Audience = jwt.Audience{"api://auth-minecraft-services/multiplayer"}
 		req.Certificate = certificate{Chain: chain{""}}
 		req.Token, _ = jwt.Signed(signer).Claims(tokenClaims{
 			Claims:          claims,
@@ -447,7 +448,7 @@ type tokenClaims struct {
 	DisplayName string `json:"xname"`
 	// Identity is the UUID of the player. It is only set for offline logins where
 	// the UUID cannot be derived from the XUID.
-	Identity string `json:"identity,omitempty"`
+	Identity string `json:"leguuid,omitempty"`
 }
 
 // identityData converts the OIDC tokenClaims into IdentityData.
