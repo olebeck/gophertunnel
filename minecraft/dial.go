@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/df-mc/go-playfab/v2"
+	"github.com/df-mc/go-xsapi/v2"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/google/uuid"
@@ -30,6 +32,7 @@ import (
 	"github.com/sandertv/gophertunnel/minecraft/protocol"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
+	"github.com/sandertv/gophertunnel/minecraft/service"
 	"golang.org/x/oauth2"
 )
 
@@ -81,6 +84,9 @@ type Dialer struct {
 	// and version of the resource pack, the number of the current pack being downloaded, and the total amount of packs.
 	// The boolean returned determines if the pack will be downloaded or not.
 	DownloadResourcePack func(id uuid.UUID, version string, current, total int) bool
+	// ResourcePackCache, if set, reuses resource packs downloaded on earlier logins. Misses and errors
+	// fall back to a normal download.
+	ResourcePackCache ResourcePackCache
 
 	// DisconnectOnUnknownPackets specifies if the connection should disconnect if packets received are not present
 	// in the packet pool. If true, such packets lead to the connection being closed immediately.
@@ -172,10 +178,11 @@ func (d Dialer) DialTimeout(network, address string, timeout time.Duration) (*Co
 	return d.DialContext(ctx, network, address)
 }
 
-// DialContext dials a Minecraft connection to the address passed over the network passed. The network is
-// typically "raknet". A Conn is returned which may be used to receive packets from and send packets to.
-// If a connection is not established before the context passed is cancelled, DialContext returns an error.
-func (d Dialer) DialContext(ctx context.Context, network, address string) (conn *Conn, err error) {
+// DialContextNetwork dials a Minecraft connection to the address passed over the Network implementation
+// passed. The network is typically [RakNet]. A Conn is returned which may be used to receive packets from
+// and send packets to. If a connection is not established before the context passed is cancelled,
+// DialContextNetwork returns an error.
+func (d Dialer) DialContextNetwork(ctx context.Context, network Network, address string) (conn *Conn, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -217,14 +224,6 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 	}
 	if chainKey == nil || chainData == "" {
 		chainKey, _ = ecdsa.GenerateKey(elliptic.P384(), cryptorand.Reader)
-		xblToken, err := getXBLToken(ctx, d)
-		if err != nil {
-			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
-		}
-		chainData, err = authChain(ctx, xblToken, chainKey)
-		if err != nil {
-			return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: err}
-		}
 	}
 	if len(chainData) > 0 {
 		identityData, err := readChainIdentityData([]byte(chainData))
@@ -234,17 +233,16 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 		d.IdentityData = identityData
 	}
 
-	n, ok := networkByID(network, d.ErrorLog)
-	if !ok {
-		return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: fmt.Errorf("dial: no network under id %v", network)}
+	var pong []byte
+	if pong, err = network.PingContext(ctx, address); err == nil {
+		address = addressWithPongPort(pong, address)
 	}
 
-	var pong []byte
 	var netConn net.Conn
-	if pong, err = n.PingContext(ctx, address); err == nil {
-		netConn, err = n.DialContext(ctx, addressWithPongPort(pong, address))
+	if i, ok := network.(identityDialer); ok && token != "" {
+		netConn, err = i.DialContextIdentity(ctx, address, token, key)
 	} else {
-		netConn, err = n.DialContext(ctx, address)
+		netConn, err = network.DialContext(ctx, address)
 	}
 	if err != nil {
 		return nil, err
@@ -260,6 +258,7 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 	conn.clientData = d.clientData
 	conn.packetFunc = d.PacketFunc
 	conn.downloadResourcePack = d.DownloadResourcePack
+	conn.resourcePackCache = d.ResourcePackCache
 	conn.cacheEnabled = d.EnableClientCache
 	conn.disconnectOnInvalidPacket = d.DisconnectOnInvalidPackets
 	conn.disconnectOnUnknownPacket = d.DisconnectOnUnknownPackets
@@ -341,6 +340,21 @@ func (d Dialer) DialContext(ctx context.Context, network, address string) (conn 
 	}
 }
 
+// DialContext dials a Minecraft connection to the address passed over the network passed. The network is
+// typically "raknet". A Conn is returned which may be used to receive packets from and send packets to.
+// If a connection is not established before the context passed is cancelled, DialContext returns an error.
+func (d Dialer) DialContext(ctx context.Context, network, address string) (conn *Conn, err error) {
+	if d.ErrorLog == nil {
+		d.ErrorLog = slog.New(internal.DiscardHandler{})
+	}
+	d.ErrorLog = d.ErrorLog.With("src", "dialer")
+	n, ok := networkByID(network, d.ErrorLog)
+	if !ok {
+		return nil, &net.OpError{Op: "dial", Net: "minecraft", Err: fmt.Errorf("dial: no network under id %v", network)}
+	}
+	return d.DialContextNetwork(ctx, n, address)
+}
+
 // readChainIdentityData reads a login.IdentityData from the Mojang chain
 // obtained through authentication.
 func readChainIdentityData(chainData []byte) (login.IdentityData, error) {
@@ -409,41 +423,6 @@ func listenConn(conn *Conn, readyForLogin, connected chan struct{}, cancel conte
 			}
 		}
 	}
-}
-
-// getXBLToken obtains an XBOX Live token using the credentials passed.
-// If the Dialer contains a valid XBLToken, it is returned directly.
-// Otherwise a new token is requested using a default Android device config.
-func getXBLToken(ctx context.Context, dialer Dialer) (*auth.XBLToken, error) {
-	xblToken, err := dialer.AuthSource.XBLToken(ctx, "https://multiplayer.minecraft.net/")
-	if err != nil {
-		return nil, err
-	}
-	if xblToken != nil {
-		return xblToken, nil
-	}
-
-	liveToken, err := dialer.AuthSource.LiveToken(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("request Live Connect token: %w", err)
-	}
-	xblToken, err = auth.RequestXBLToken(ctx, liveToken, "https://multiplayer.minecraft.net/")
-	if err != nil {
-		return nil, fmt.Errorf("request XBOX Live token: %w", err)
-	}
-
-	return xblToken, nil
-}
-
-// authChain requests the Minecraft auth JWT chain using the credentials passed. If successful, an encoded
-// chain ready to be put in a login request is returned.
-func authChain(ctx context.Context, xblToken *auth.XBLToken, key *ecdsa.PrivateKey) (string, error) {
-	// Obtain the raw chain data using the XBL token.
-	chain, err := auth.RequestMinecraftChain(ctx, xblToken, key)
-	if err != nil {
-		return "", fmt.Errorf("request Minecraft auth chain: %w", err)
-	}
-	return chain, nil
 }
 
 //go:embed skin_resource_patch.json
