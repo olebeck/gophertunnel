@@ -22,6 +22,8 @@ require (
 
 require (
 	github.com/coder/websocket v1.8.14 // indirect
+	github.com/creachadair/jrpc2 v1.3.5 // indirect
+	github.com/creachadair/mds v0.26.1 // indirect
 	github.com/pion/datachannel v1.6.2 // indirect
 	github.com/pion/dtls/v3 v3.1.4 // indirect
 	github.com/pion/ice/v4 v4.2.7 // indirect
@@ -41,6 +43,7 @@ require (
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/image v0.21.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 )
