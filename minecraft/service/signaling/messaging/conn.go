@@ -186,18 +186,12 @@ func (conn *Conn) handleCallback(ctx context.Context, request *jrpc2.Request) (a
 // It decodes every batch message included in the given request
 // and calls handleInnerMessage.
 func (conn *Conn) handleMessage(ctx context.Context, request *jrpc2.Request) (v any, err error) {
-	var params []*envelope
-	if err := request.UnmarshalParams(&params); err != nil {
+	var param envelope
+	if err := request.UnmarshalParams(&param); err != nil {
 		return nil, fmt.Errorf("decode parameters: %w", err)
 	}
-	for _, e := range params {
-		if e == nil {
-			err = errors.Join(err, errors.New("signaling/messaging: nil envelope"))
-			continue
-		}
-		if err2 := conn.handleInnerMessage(ctx, e); err2 != nil {
-			err = errors.Join(err, err2)
-		}
+	if err2 := conn.handleInnerMessage(ctx, &param); err2 != nil {
+		err = errors.Join(err, err2)
 	}
 	return nil, err
 }
