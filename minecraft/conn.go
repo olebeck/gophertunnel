@@ -799,6 +799,8 @@ func (conn *Conn) handlePacket(pk packet.Packet) error {
 // handleRequestNetworkSettings handles an incoming RequestNetworkSettings packet. It returns an error if the protocol
 // version is not supported, otherwise sending back a NetworkSettings packet.
 func (conn *Conn) handleRequestNetworkSettings(pk *packet.RequestNetworkSettings) error {
+	// Log only the numeric pre-login protocol, never a login chain or JWT.
+	conn.log.Info("client network protocol", "client_protocol", pk.ClientProtocol, "supported_protocol", protocol.CurrentProtocol)
 	found := false
 	for _, pro := range conn.acceptedProto {
 		if pro.ID() == pk.ClientProtocol {

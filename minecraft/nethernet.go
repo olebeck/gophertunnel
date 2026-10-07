@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 
 	"github.com/df-mc/go-nethernet"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
@@ -47,12 +49,22 @@ func (n NetherNet) DialContext(ctx context.Context, address string) (net.Conn, e
 // If [nethernet.Dialer.Identity] is already set, that identity is used instead.
 func (n NetherNet) DialContextIdentity(ctx context.Context, address string, token string, privateKey *ecdsa.PrivateKey) (net.Conn, error) {
 	if n.Dialer.Identity == nil {
-		n.Dialer.Identity = &nethernet.Identity{
-			PrivateKey: privateKey,
-			Token:      token,
+		env, err := authEnv(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("request authorization environment: %w", err)
 		}
+		n.Dialer.Identity = netherNetIdentity(privateKey, token, env.Issuer)
 	}
 	return n.DialContext(ctx, address)
+}
+
+// netherNetIdentity binds the token to the authorization issuer used upstream.
+func netherNetIdentity(privateKey *ecdsa.PrivateKey, token string, issuer *url.URL) *nethernet.Identity {
+	return &nethernet.Identity{
+		PrivateKey: privateKey,
+		Token:      token,
+		Domain:     issuer.JoinPath().String(),
+	}
 }
 
 // PingContext ...
