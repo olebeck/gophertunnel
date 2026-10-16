@@ -414,10 +414,10 @@ func (listener *Listener) updatePongData() {
 	}
 	// The field after the game mode is a separate flag: clients drop pongs of ten or more fields unless it
 	// is exactly 1.
-	listener.listener.PongData([]byte(fmt.Sprintf("MCPE;%v;%v;%v;%v;%v;%v;%v;%v;%v;%v;%v;%v;%v;",
+	listener.listener.PongData(fmt.Appendf(nil, "MCPE;%v;%v;%v;%v;%v;%v;%v;%v;%v;%v;%v;%v;%v;",
 		s.ServerName, protocol.CurrentProtocol, protocol.CurrentVersion, s.PlayerCount, s.MaxPlayers,
 		listener.listener.ID(), s.ServerSubName, gameTypeName(s.GameType), 1, port, port, 0, 0,
-	)))
+	))
 }
 
 // listen starts listening for incoming connections and packets. When a player is fully connected, it submits

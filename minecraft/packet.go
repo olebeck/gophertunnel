@@ -36,17 +36,17 @@ func (p *packetData) ensureOwned() *packetData {
 		return p
 	}
 	full := bytes.Clone(p.full)
-	payloadOffset := len(p.full) - p.payload.Len()
+	payloadOffset := len(p.full) - p.Payload.Len()
 	var payload []byte
 	if payloadOffset < 0 {
-		payload = bytes.Clone(p.payload.Bytes())
+		payload = bytes.Clone(p.Payload.Bytes())
 	} else {
 		payload = full[payloadOffset:]
 	}
 	return &packetData{
-		h:       p.h,
+		Header:  p.Header,
 		full:    full,
-		payload: bytes.NewBuffer(payload),
+		Payload: bytes.NewBuffer(payload),
 		owned:   true,
 	}
 }
@@ -57,18 +57,6 @@ type unknownPacketError struct {
 
 func (err unknownPacketError) Error() string {
 	return fmt.Sprintf("unexpected packet (ID=%v)", err.id)
-}
-
-type decodeablePacket interface {
-	decode(conn *Conn) (pks []packet.Packet, err error)
-}
-
-type deferredPackets struct {
-	pks []packet.Packet
-}
-
-func (d deferredPackets) decode(conn *Conn) (pks []packet.Packet, err error) {
-	return d.pks, nil
 }
 
 func (p *packetData) decode(conn *Conn) (pks []packet.Packet, err error) {

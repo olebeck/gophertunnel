@@ -162,7 +162,7 @@ type Conn struct {
 	// deferredPackets is a list of packets that were pushed back during the login sequence because they
 	// were not used by the connection yet. These packets are read the first when calling to Read or
 	// ReadPacket after being connected.
-	deferredPackets []decodeablePacket
+	deferredPackets []*packetData
 	readDeadline    <-chan time.Time
 
 	// sendMu protects bufferedSend/bufferedSendSpare.
@@ -637,7 +637,7 @@ func (conn *Conn) Context() context.Context {
 
 // takeDeferredPacket locks the deferred packets lock and takes the next packet from the list of deferred
 // packets. If none was found, it returns false, and if one was found, the data and true is returned.
-func (conn *Conn) takeDeferredPacket() (decodeablePacket, bool) {
+func (conn *Conn) takeDeferredPacket() (*packetData, bool) {
 	conn.deferredPacketMu.Lock()
 	defer conn.deferredPacketMu.Unlock()
 
@@ -654,7 +654,7 @@ func (conn *Conn) takeDeferredPacket() (decodeablePacket, bool) {
 }
 
 // deferPacket defers a packet so that it is obtained in the next ReadPacket call
-func (conn *Conn) deferPacket(pk decodeablePacket) {
+func (conn *Conn) deferPacket(pk *packetData) {
 	pk = pk.ensureOwned()
 	conn.deferredPacketMu.Lock()
 	conn.deferredPackets = append(conn.deferredPackets, pk)
@@ -712,28 +712,25 @@ func (conn *Conn) handle(pkData *packetData) error {
 		}
 	}
 	if conn.prePlayPacketHandler != nil {
-		var def deferredPackets
 		pks, err := pkData.decode(conn)
 		if err != nil {
 			return err
 		}
+		var skip bool
 		for _, pk := range pks {
 			handled, err := conn.prePlayPacketHandler(conn, pk, time.Now())
 			if err != nil {
 				return err
 			}
-			if !handled {
-				def.pks = append(def.pks, pk)
-			}
+			skip = skip || handled
 		}
-		if len(def.pks) > 0 {
-			conn.deferPacket(def)
+		if skip {
+			return nil
 		}
-	} else {
-		// This is not the packet we expected next in the login sequence. We push it back so that it may
-		// be handled by the user.
-		conn.deferPacket(pkData)
 	}
+	// This is not the packet we expected next in the login sequence. We push it back so that it may
+	// be handled by the user.
+	conn.deferPacket(pkData)
 	return nil
 }
 
