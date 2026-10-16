@@ -13,10 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -112,6 +112,11 @@ type Dialer struct {
 	// are converted from and to this Protocol.
 	Protocol Protocol
 
+	// MaxDecompressedLen is the maximum length of a decompressed packet batch to prevent potential exploits.
+	// If 0, the default value is 16MB (16 * 1024 * 1024). Setting this to a negative integer disables the
+	// limit.
+	MaxDecompressedLen int
+
 	// FlushRate is the rate at which packets sent are flushed. Packets are buffered for a duration up to
 	// FlushRate and are compressed/encrypted together to improve compression ratios. The lower this
 	// time.Duration, the lower the latency but the less efficient both network and cpu wise.
@@ -135,6 +140,9 @@ type Dialer struct {
 	// (pre-1.21.90) when connecting to the server. This should only be used for outdated
 	// servers, as enabling it will cause compatibility issues with updated servers.
 	EnableLegacyAuth bool
+
+	// DisablePortFollowing, if set to true, dials respect provided port instead of following the pong port.
+	DisablePortFollowing bool
 
 	EarlyConnHandler func(*Conn)
 
@@ -279,9 +287,10 @@ func (d Dialer) DialContextNetwork(ctx context.Context, network Network, address
 		d.IdentityData = identityData
 	}
 
-	var pong []byte
-	if pong, err = network.PingContext(ctx, address); err == nil {
-		address = addressWithPongPort(pong, address)
+	if !d.DisablePortFollowing {
+		if pong, err := network.PingContext(ctx, address); err == nil {
+			address = addressWithPongPort(pong, address)
+		}
 	}
 
 	var netConn net.Conn
@@ -308,7 +317,7 @@ func (d Dialer) DialContextNetwork(ctx context.Context, network Network, address
 	conn.cacheEnabled = d.EnableClientCache
 	conn.disconnectOnInvalidPacket = d.DisconnectOnInvalidPackets
 	conn.disconnectOnUnknownPacket = d.DisconnectOnUnknownPackets
-	conn.maxDecompressedLen = math.MaxInt
+	conn.maxDecompressedLen = d.MaxDecompressedLen
 	conn.prePlayPacketHandler = d.PrePlayPacketHandler
 
 	defaultIdentityData(&conn.identityData)
@@ -368,7 +377,9 @@ func (d Dialer) DialContextNetwork(ctx context.Context, network Network, address
 		return nil, conn.closeErr("dial")
 	case <-readyForLogin:
 		// We've received our network settings, so we can now send our login request.
-		conn.expect(packet.IDServerToClientHandshake, packet.IDPlayStatus)
+		// ResourcePacksInfo is expected too: servers without encryption skip the handshake and some send it
+		// before PlayStatus(LoginSuccess).
+		conn.expect(packet.IDServerToClientHandshake, packet.IDPlayStatus, packet.IDResourcePacksInfo)
 		if err := conn.WritePacket(&packet.Login{ConnectionRequest: request, ClientProtocol: d.Protocol.ID()}); err != nil {
 			return nil, conn.wrap(fmt.Errorf("send login: %w", err), "dial")
 		}
@@ -435,26 +446,12 @@ func listenConn(conn *Conn, readyForLogin, connected chan struct{}, cancel conte
 	for {
 		// We finally arrived at the packet decoding loop. We constantly decode packets that arrive
 		// and push them to the Conn so that they may be processed.
-		packets, err := conn.dec.Decode()
-		if err != nil {
-			if !errors.Is(err, net.ErrClosed) {
-				if cancelContext {
-					cancel(err)
-				} else {
-					conn.log.Error(err.Error())
-				}
-			}
-			return
-		}
-		for _, data := range packets {
+		receiveErr := false
+		if err := conn.dec.DecodeFunc(func(data []byte) error {
 			loggedInBefore, readyToLoginBefore := conn.loggedIn, conn.readyToLogin
 			if err := conn.receive(data); err != nil {
-				if cancelContext {
-					cancel(err)
-				} else {
-					conn.log.Error(err.Error())
-				}
-				return
+				receiveErr = true
+				return err
 			}
 			if !readyToLoginBefore && conn.readyToLogin {
 				// This is the signal that the connection is ready to login, so we put a value in the channel so that
@@ -467,6 +464,16 @@ func listenConn(conn *Conn, readyForLogin, connected chan struct{}, cancel conte
 				cancelContext = false
 				connected <- struct{}{}
 			}
+			return nil
+		}); err != nil {
+			if receiveErr || !errors.Is(err, net.ErrClosed) {
+				if cancelContext {
+					cancel(err)
+				} else {
+					conn.log.Error(err.Error())
+				}
+			}
+			return
 		}
 	}
 }
@@ -477,9 +484,23 @@ var skinResourcePatch []byte
 //go:embed skin_geometry.json
 var skinGeometry []byte
 
+// serverAddress returns the address in the form clients report it in their login request. For
+// networks addressed by a URL, such as NetherNet, clients repeat the port of the address after
+// it: 'https://<host>:<port>:<port>'.
+func serverAddress(address string) string {
+	if !strings.Contains(address, "://") {
+		return address
+	}
+	u, err := url.Parse(address)
+	if err != nil || u.Port() == "" {
+		return address
+	}
+	return address + ":" + u.Port()
+}
+
 // defaultClientData edits the ClientData passed to have defaults set to all fields that were left unchanged.
 func defaultClientData(address, username string, d *login.ClientData) {
-	d.ServerAddress = address
+	d.ServerAddress = serverAddress(address)
 	d.ThirdPartyName = username
 	if d.DeviceOS == 0 {
 		d.DeviceOS = protocol.DeviceAndroid
