@@ -669,7 +669,7 @@ func (conn *Conn) receive(data []byte) error {
 		return err
 	}
 	if conn.packetFunc != nil {
-		conn.packetFunc(*pkData.Header, pkData.Payload.Bytes(), conn.RemoteAddr(), conn.LocalAddr(), time.Now())
+		conn.packetFunc(*pkData.Header, pkData.Payload(), conn.RemoteAddr(), conn.LocalAddr(), time.Now())
 	}
 
 	if pkData.Header.PacketID == packet.IDDisconnect {

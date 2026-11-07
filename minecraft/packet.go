@@ -9,9 +9,9 @@ import (
 
 // packetData holds the data of a Minecraft packet.
 type packetData struct {
-	Header  *packet.Header
-	full    []byte
-	Payload *bytes.Buffer
+	Header    *packet.Header
+	headerLen int
+	Full      []byte
 	// owned specifies if full and payload no longer alias the Decoder's pooled batch buffer, meaning the
 	// packetData may be retained after the read callback it was created in returns.
 	owned bool
@@ -26,7 +26,8 @@ func ParseData(data []byte) (*packetData, error) {
 		// we return to reading a new packet.
 		return nil, fmt.Errorf("read packet header: %w", err)
 	}
-	return &packetData{Header: header, full: data, Payload: buf}, nil
+	headerLen := len(data) - buf.Len()
+	return &packetData{Header: header, Full: data, headerLen: headerLen}, nil
 }
 
 // ensureOwned returns a packetData that owns its underlying data, copying it if it still aliases the
@@ -35,20 +36,17 @@ func (p *packetData) ensureOwned() *packetData {
 	if p.owned {
 		return p
 	}
-	full := bytes.Clone(p.full)
-	payloadOffset := len(p.full) - p.Payload.Len()
-	var payload []byte
-	if payloadOffset < 0 {
-		payload = bytes.Clone(p.Payload.Bytes())
-	} else {
-		payload = full[payloadOffset:]
-	}
+	full := bytes.Clone(p.Full)
 	return &packetData{
-		Header:  p.Header,
-		full:    full,
-		Payload: bytes.NewBuffer(payload),
-		owned:   true,
+		Header:    p.Header,
+		Full:      full,
+		headerLen: p.headerLen,
+		owned:     true,
 	}
+}
+
+func (p *packetData) Payload() []byte {
+	return p.Full[p.headerLen:]
 }
 
 type unknownPacketError struct {
@@ -84,10 +82,13 @@ func (p *packetData) Decode(pool packet.Pool, proto Protocol, close func() error
 		}
 	}()
 
-	r := proto.NewReader(p.Payload, ShieldID, false)
+	payloadBuf := p.Payload()
+	payload := bytes.NewReader(payloadBuf)
+	r := proto.NewReader(payload, ShieldID, false)
 	pk.Marshal(r)
-	if p.Payload.Len() != 0 {
-		err = fmt.Errorf("decode packet %T: %v unread bytes left: 0x%x", pk, p.Payload.Len(), p.Payload.Bytes())
+	if payload.Len() != 0 {
+		left := payloadBuf[len(payloadBuf)-payload.Len():]
+		err = fmt.Errorf("decode packet %T: %v unread bytes left: 0x%x", pk, len(left), left)
 	}
 	if DisconnectOnInvalidPacket && err != nil {
 		return nil, err
