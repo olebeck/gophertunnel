@@ -128,6 +128,10 @@ type Address struct {
 	IPv4Address string `json:"ipV4Address"`
 	// Port is the UDP port of the resolved server.
 	Port uint16 `json:"port"`
+	// NetherNetID is the network ID of the resolved server. It is only set when
+	// NetworkProtocol names a NetherNet transport, in which case IPv4Address and
+	// Port are absent.
+	NetherNetID string `json:"netherNetId"`
 	// DestinationInfo contains additional identifiers for the resolved
 	// destination.
 	DestinationInfo DestinationInfo `json:"destinationInfo"`
