@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,6 +42,30 @@ var (
 	ErrPlayerNotInRealm = errors.New("player not in realm")
 	ErrRealmNotFound    = errors.New("realm not found")
 )
+
+// apiError adds the reason the api gave, if it gave one, to err (which
+// errors.Is still finds).
+func apiError(err error, body []byte) error {
+	msg := strings.TrimSpace(string(body))
+	if msg == "" {
+		return err
+	}
+	var parsed struct {
+		ErrorMsg string `json:"errorMsg"`
+		Message  string `json:"message"`
+	}
+	if json.Unmarshal(body, &parsed) == nil {
+		if parsed.ErrorMsg != "" {
+			msg = parsed.ErrorMsg
+		} else if parsed.Message != "" {
+			msg = parsed.Message
+		}
+	}
+	if len(msg) > 300 {
+		msg = msg[:300]
+	}
+	return fmt.Errorf("%w: %s", err, msg)
+}
 
 // NewClient returns a new Client instance with the supplied token source for authentication.
 // If httpClient is nil, http.DefaultClient will be used to request the realms api.
@@ -182,11 +207,11 @@ func (r *Client) RealmAddress(ctx context.Context, realmID int) (RealmAddress, e
 				case 503:
 					continue
 				case 404:
-					return RealmAddress{}, ErrRealmNotFound
+					return RealmAddress{}, apiError(ErrRealmNotFound, body)
 				case 403:
-					return RealmAddress{}, ErrPlayerNotInRealm
+					return RealmAddress{}, apiError(ErrPlayerNotInRealm, body)
 				}
-				return RealmAddress{}, err
+				return RealmAddress{}, apiError(err, body)
 			}
 
 			var address RealmAddress

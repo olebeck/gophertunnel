@@ -90,7 +90,7 @@ func (x *MapDecoration) Marshal(r IO) {
 	r.Uint8(&x.X)
 	r.Uint8(&x.Y)
 	r.String(&x.Label)
-	r.BEARGB(&x.Colour)
+	r.RGBA(&x.Colour)
 }
 
 // PixelRequest is the request for the colour of a pixel in a MapInfoRequest packet.
